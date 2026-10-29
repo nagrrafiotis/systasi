@@ -2,7 +2,9 @@
 import './style.css';
 import './doc.css';
 import { AREA_COLS, KINDS, UNIT_TYPES, LEVELS, ZONES, REGIMES, PLOT_TYPES, AREAS_ZONE, TABS, DEFAULT_ENG, $, $$, uid, newPid, esc, clone, num, nz, r2, fmt, a2, fin, UP,
-  parseRings, normPt, blankProject, GU, mkUnit, sampleProject, compute } from './core.js';
+  parseRings, normPt, blankProject, GU, mkUnit, sampleProject, compute, holder, mkBuilding, BLD_PREFIX } from './core.js';
+const bOf=(p,u)=>(p.buildings||[]).find(b=>b.id===u.bld);
+const bcode=(p,u)=>{ const b=bOf(p,u); return b?(b.code||''):''; };
 import { configured } from './supabase.js';
 import * as store from './store.js';
 
@@ -291,7 +293,7 @@ function vInfo(){
    <div class="panel"><h3>Υπολογισμός χιλιοστών</h3>
      <div class="row" style="gap:18px;margin-bottom:12px">
        <label class="chk"><input type="radio" name="pmmode" value="auto" data-coll="calc" data-field="mode" ${p.calc.mode==='auto'?'checked':''}> Αυτόματα, αναλογικά με εμβαδά</label>
-       <label class="chk"><input type="radio" name="pmmode" value="manual" data-coll="calc" data-field="mode" ${p.calc.mode==='manual'?'checked':''}> Χειροκίνητα ανά ιδιοκτησία</label>
+       <label class="chk"><input type="radio" name="pmmode" value="manual" data-coll="calc" data-field="mode" ${p.calc.mode==='manual'?'checked':''}> Χειροκίνητα ανά ιδιοκτησία</label>${p.info.regime==='kathoriz'&&p.buildings.length?'<span class="hint">σε κάθετη και οριζόντια: ‰ επί του κτιρίου</span>':''}
        <label class="chk">Δεκαδικά ‰ ${SEL('calc','x','dec',[[0,'0'],[1,'1'],[2,'2'],[3,'3']],p.calc.dec)}</label>
      </div>
      <p class="hint" style="margin-bottom:10px">Βάρος ιδιοκτησίας = συντελεστής θέσης × Σ(εμβαδόν × συντελεστής στήλης). Τα χιλιοστά στρογγυλεύονται ώστε το σύνολο να βγαίνει ακριβώς 1000‰. Στο παράδειγμα της συμβολαιογράφου τα ποσοστά προκύπτουν μόνο από τους κύριους χώρους (συντελεστής 1, οι υπόλοιποι 0).</p>
@@ -306,38 +308,77 @@ function vInfo(){
    </div></div>
   </section>`;
 }
-function vUnits(){
-  const p=S.p,c=S.c,cols=AREA_COLS.filter(a=>p.calc.cols[a.k]!==false), man=p.calc.mode==='manual';
-  const rows=p.units.map((u,ix)=>{ const hasL=u.levels&&u.levels.length, open=S.open.has(u.id);
-    const det=open?`<tr class="detail"><td colspan="${cols.length+6}"><div class="grid">
+function unitRow(p,c,u,ix,cols,two,man,grouped){
+  const hasL=u.levels&&u.levels.length, open=S.open.has(u.id), span=cols.length+6+(two?1:0);
+  const det=open?`<tr class="detail"><td colspan="${span}"><div class="grid">
        <label class="f"><span>Τύπος</span>${SEL('u',u.id,'type',UNIT_TYPES.map(t=>[t,t]),u.type)}</label>
-       <label class="f"><span>Κτίριο (για κάθετη/μικτή)</span>${I('u',u.id,'building',u.building,'wide')}</label>
+       ${p.buildings.length?`<label class="f"><span>Κτίριο</span>${SEL('u',u.id,'bld',[['','— χωρίς κτίριο —'],...p.buildings.map(b=>[b.id,b.code||'(κτίριο)'])],u.bld||'','data-re="1"')}</label>`:''}
        <label class="f"><span>Συντελεστής θέσης / ορόφου</span>${I('u',u.id,'adj',u.adj??1)}</label>
        <div class="f span2"><span style="font-weight:500;font-size:12px;color:var(--muted)">Κύριοι χώροι ανά επίπεδο</span><div class="lvls">
          ${(u.levels||[]).map((l,li)=>`<div class="lvl">${SEL('lv',u.id+'|'+li,'name',LEVELS.map(x=>[x[0],x[0]]),l.name)} ${I('lv',u.id+'|'+li,'area',l.area)} m² <button class="btn ghost sm" data-act="lv-del" data-id="${u.id}" data-ix="${li}" aria-label="Αφαίρεση επιπέδου">✕</button></div>`).join('')}
          <div><button class="btn sm" data-act="lv-add" data-id="${u.id}">+ Επίπεδο</button> <span class="hint">Όταν δοθούν επίπεδα, οι κύριοι χώροι είναι το άθροισμά τους.</span></div></div></div>
        <label class="f span2"><span>Ειδικό κείμενο περιγραφής (αντικαθιστά το αυτόματο)</span><textarea rows="3" id="u-${u.id}-descr" data-coll="u" data-id="${u.id}" data-field="descr" style="font-family:var(--f-body)">${esc(u.descr)}</textarea></label>
      </div></td></tr>`:'';
-    return `<tr>
-      <td>${I('u',u.id,'code',u.code,'code')}<div class="hint">${esc(u.type)}${u.building?' · '+esc(u.building):''}</div></td>
+  return `<tr class="${grouped?'in-b':''}">
+      <td>${I('u',u.id,'code',u.code,'code')}<div class="hint">${esc(u.type)}</div></td>
       ${cols.map(a=>`<td class="n">${a.k==='main'&&hasL?`<span class="calc" data-calc="u.${u.id}.main"></span><div class="hint">${u.levels.map(l=>esc((LEVELS.find(x=>x[0]===l.name)||[0,l.name])[1])+' '+fmt(num(l.area))).join(' / ')}</div>`:I('u',u.id,a.k,u[a.k])}</td>`).join('')}
       <td class="n calc" data-calc="u.${u.id}.excl"></td>
       <td class="n calc" data-calc="u.${u.id}.park"></td>
-      <td class="n">${man?I('u',u.id,'pmManual',u.pmManual):`<span class="calc" data-calc="u.${u.id}.pm"></span>`}</td>
+      ${two?`<td class="n">${man?I('u',u.id,'pmManual',u.pmManual):`<span class="calc" data-calc="u.${u.id}.pmB"></span>`}</td>`:''}
+      <td class="n">${(!two&&man)?I('u',u.id,'pmManual',u.pmManual):`<span class="calc" data-calc="u.${u.id}.pm"></span>`}</td>
       <td class="n calc" data-calc="u.${u.id}.plot"></td>
-      <td class="act"><button class="btn ghost sm" data-act="u-open" data-id="${u.id}" aria-expanded="${open}" aria-label="Λεπτομέρειες" title="Επίπεδα, τύπος, συντελεστής, κείμενο">${open?'▴':'▾'} Στοιχεία</button><button class="btn ghost sm" data-act="u-up" data-id="${u.id}" ${ix?'':'disabled'} aria-label="Πάνω">↑</button><button class="btn ghost sm" data-act="u-del" data-id="${u.id}" aria-label="Διαγραφή">✕</button></td>
-    </tr>${det}`; }).join('');
+      <td class="act"><button class="btn ghost sm" data-act="u-open" data-id="${u.id}" aria-expanded="${open}" aria-label="Λεπτομέρειες" title="Κτίριο, επίπεδα, τύπος, συντελεστής, κείμενο">${open?'▴':'▾'} Στοιχεία</button><button class="btn ghost sm" data-act="u-up" data-id="${u.id}" ${ix?'':'disabled'} aria-label="Πάνω">↑</button><button class="btn ghost sm" data-act="u-del" data-id="${u.id}" aria-label="Διαγραφή">✕</button></td>
+    </tr>${det}`;
+}
+function vUnits(){
+  const p=S.p,c=S.c,cols=AREA_COLS.filter(a=>p.calc.cols[a.k]!==false), man=p.calc.mode==='manual', two=c.two, grouped=p.buildings.length>0;
+  const head=b=>`<tr class="bhead"><td><b>${esc(b.code||'(κτίριο)')}</b><div class="hint">${two?'κάθετη ιδιοκτησία · ':''}${c.b[b.id].units.length} ιδιοκτ.</div></td>
+      ${cols.map(a=>`<td class="n" data-calc="b.${b.id}.u_${a.k}"></td>`).join('')}
+      <td class="n" data-calc="b.${b.id}.exclAll"></td><td class="n" data-calc="b.${b.id}.parkAll"></td>
+      ${two?`<td class="n" data-calc="b.${b.id}.inSum"></td>`:''}
+      <td class="n calc" data-calc="b.${b.id}.pm"></td>
+      <td class="n calc" data-calc="b.${b.id}.plot"></td>
+      <td class="act"><button class="btn ghost sm" data-act="u-add" data-bld="${b.id}">+ Ιδιοκτησία</button></td></tr>`;
+  let rows='';
+  if(grouped){
+    p.buildings.forEach(b=>{ rows+=head(b); p.units.forEach((u,ix)=>{ if(u.bld===b.id) rows+=unitRow(p,c,u,ix,cols,two,man,true); }); });
+    const orph=p.units.map((u,ix)=>[u,ix]).filter(([u])=>!bOf(p,u));
+    if(orph.length) rows+=`<tr class="bhead warnrow"><td colspan="${cols.length+6+(two?1:0)}"><b>Χωρίς κτίριο</b> <span class="hint">— όρισε κτίριο από τα «Στοιχεία» κάθε ιδιοκτησίας</span></td></tr>`+orph.map(([u,ix])=>unitRow(p,c,u,ix,cols,two,man,true)).join('');
+  } else rows=p.units.map((u,ix)=>unitRow(p,c,u,ix,cols,two,man,false)).join('');
   const G=PLOT_TYPES[p.info.plotType]||PLOT_TYPES.oik;
+  const pmText=two?(man?'Τα ποσοστά των ιδιοκτησιών δίνονται χειροκίνητα, επί του κτιρίου τους.':'Τα ποσοστά υπολογίζονται αυτόματα: πρώτα κάθε κτιρίου επί του '+G[2]+', μετά κάθε ιδιοκτησίας επί του κτιρίου της.'):(man?'Τα ποσοστά δίνονται χειροκίνητα.':'Τα ποσοστά υπολογίζονται αυτόματα (ρύθμιση στα Στοιχεία έργου).');
   return `<section class="sect">
-   <div class="sect-head"><div><h2>Ιδιοκτησίες & χιλιοστά</h2><p>Μία γραμμή ανά αυτοτελή ιδιοκτησία. Τα εμβαδά αποκλειστικών χρήσεων και θέσεων στάθμευσης έρχονται από την επόμενη καρτέλα. ${man?'Τα ποσοστά δίνονται χειροκίνητα.':'Τα ποσοστά υπολογίζονται αυτόματα (ρύθμιση στα Στοιχεία έργου).'}</p></div>
+   <div class="sect-head"><div><h2>Ιδιοκτησίες & χιλιοστά</h2><p>Μία γραμμή ανά αυτοτελή ιδιοκτησία. Τα εμβαδά αποκλειστικών χρήσεων και θέσεων στάθμευσης έρχονται από την καρτέλα «Αποκλειστικές χρήσεις». ${pmText}</p></div>
    </div>
    ${quickPanel()}
+   ${buildingsPanel()}
    <div class="row" style="justify-content:space-between"><h3 style="font-size:15px">Ιδιοκτησίες</h3><button class="btn primary" data-act="u-add">+ Ιδιοκτησία</button></div>
-   <div class="tscroll"><table class="dt"><thead><tr><th>Ιδιοκτησία</th>${cols.map(a=>`<th class="n">${a.h}<br><span class="u">m²</span></th>`).join('')}<th class="n">Αποκλ. χρήσεις<br><span class="u">m²</span></th><th class="n">Στάθμευση<br><span class="u">m²</span></th><th class="n">Ποσοστό<br>‰</th><th class="n">Αναλογία ${esc(G[2])}<br><span class="u">m²</span></th><th></th></tr></thead>
-   <tbody>${rows}${p.units.length?`<tr class="tot"><td>Σύνολο ιδιοκτησιών</td>${cols.map(a=>`<td class="n" data-calc="tot.${a.k}"></td>`).join('')}<td class="n" data-calc="tot.excl"></td><td class="n" data-calc="tot.park"></td><td class="n" data-calc="pmSum"></td><td class="n" data-calc="tot.plot"></td><td></td></tr>`:''}</tbody></table></div>
+   <div class="tscroll"><table class="dt"><thead><tr><th>Ιδιοκτησία</th>${cols.map(a=>`<th class="n">${a.h}<br><span class="u">m²</span></th>`).join('')}<th class="n">Αποκλ. χρήσεις<br><span class="u">m²</span></th><th class="n">Στάθμευση<br><span class="u">m²</span></th>${two?'<th class="n">‰ επί<br>κτιρίου</th>':''}<th class="n">${two?'‰ επί<br>'+esc(G[2]):'Ποσοστό<br>‰'}</th><th class="n">Αναλογία ${esc(G[2])}<br><span class="u">m²</span></th><th></th></tr></thead>
+   <tbody>${rows}${p.units.length?`<tr class="tot"><td>Σύνολο ιδιοκτησιών</td>${cols.map(a=>`<td class="n" data-calc="tot.${a.k}"></td>`).join('')}<td class="n" data-calc="tot.excl"></td><td class="n" data-calc="tot.park"></td>${two?'<td></td>':''}<td class="n" data-calc="pmSum"></td><td class="n" data-calc="tot.plot"></td><td></td></tr>`:''}</tbody></table></div>
    ${p.units.length?'':'<p class="hint">Δεν υπάρχουν ιδιοκτησίες ακόμη. Πρόσθεσε την πρώτη με το κουμπί «+ Ιδιοκτησία».</p>'}
    ${balancePanel()}
   </section>`;
+}
+function buildingsPanel(){
+  const p=S.p,c=S.c,two=c.two,G=PLOT_TYPES[p.info.plotType]||PLOT_TYPES.oik,d=Number(p.calc.dec??2);
+  if(!p.buildings.length) return `<div class="panel"><div class="row" style="justify-content:space-between;gap:12px"><div style="min-width:0;flex:1"><h3 style="margin:0 0 4px">Κτίρια</h3><p class="hint">Για δύο ή περισσότερα κτίρια στο ίδιο ${esc(G[2])}, πρόσθεσε κτίρια και όρισε σε ποιο ανήκει κάθε ιδιοκτησία.</p></div><button class="btn" data-act="b-add">+ Κτίριο</button></div></div>`;
+  const bman=two&&p.calc.bldMode==='manual';
+  const rows=p.buildings.map(b=>{ const B=c.b[b.id]; return `<tr>
+     <td>${I('b',b.id,'code',b.code,'code','aria-label="Ονομασία κτιρίου"')}</td>
+     <td style="min-width:180px">${I('b',b.id,'descr',b.descr,'wide','placeholder="π.χ. διώροφη κατοικία με υπόγειο" aria-label="Περιγραφή κτιρίου"')}</td>
+     <td class="n">${B.units.length}</td>
+     <td class="n calc" data-calc="b.${b.id}.land"></td>
+     <td class="n">${bman?I('b',b.id,'pmManual',b.pmManual):`<span class="calc" data-calc="b.${b.id}.pm"></span>`}</td>
+     <td class="n calc" data-calc="b.${b.id}.plot"></td>
+     <td class="act"><button class="btn ghost sm" data-act="b-group" data-id="${b.id}" title="Νέα ομάδα κοινοχρήστων με τις ιδιοκτησίες του κτιρίου">Κοινόχρηστα κτιρίου</button><button class="btn ghost sm" data-act="b-del" data-id="${b.id}" aria-label="Διαγραφή κτιρίου">✕</button></td></tr>`; }).join('');
+  const mode=two?`<label class="f" style="max-width:420px"><span>Ποσοστό κάθε κτιρίου επί του ${esc(G[2])}</span>${SEL('calc','x','bldMode',[['auto','Από τα εμβαδά των ιδιοκτησιών του'],['land','Κατά την αποκλειστική χρήση γης κάθε κτιρίου'],['manual','Χειροκίνητα (κατά συμφωνία)']],p.calc.bldMode||'auto')}</label>`:'';
+  const note=two
+    ? `<p class="hint">Κάθε κτίριο είναι κάθετη ιδιοκτησία με δικό του ποσοστό επί του ${esc(G[2])}. Κάθε ιδιοκτησία παίρνει ποσοστό επί του κτιρίου της (σύνολο 1000‰ ανά κτίριο), και το ποσοστό της επί του ${esc(G[2])} είναι το γινόμενο των δύο. Η «αποκλειστική χρήση γης» ενός κτιρίου είναι οι αποκλειστικές χρήσεις που έχουν δοθεί στο ίδιο το κτίριο ή στις ιδιοκτησίες του.</p>`
+    : `<div class="row" style="justify-content:space-between;gap:10px"><p class="hint" style="flex:1;min-width:240px">Με «${esc(REGIMES[p.info.regime])}» κάθε ιδιοκτησία παίρνει ποσοστό απευθείας επί του ${esc(G[2])} και τα κτίρια λειτουργούν ως ομάδες, όπως στο παράδειγμα της συμβολαιογράφου. Για σύσταση σε δύο επίπεδα (κάθε κτίριο κάθετη ιδιοκτησία με δικά του χιλιοστά, και μέσα σε αυτό οριζόντιες ιδιοκτησίες) άλλαξε σε «Κάθετη και οριζόντια ιδιοκτησία».</p>${p.info.regime!=='kathoriz'?'<button class="btn sm" data-act="set-kathoriz">Κάθετη και οριζόντια</button>':''}</div>`;
+  return `<div class="panel"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h3 style="margin:0">Κτίρια</h3><button class="btn" data-act="b-add">+ Κτίριο</button></div>
+   <div class="sect" style="gap:10px">${note}${mode}
+   <div class="tscroll"><table class="dt"><thead><tr><th>Κτίριο</th><th>Περιγραφή</th><th class="n">Ιδιοκτ.</th><th class="n">Αποκλ. χρήση γης<br><span class="u">m²</span></th><th class="n">‰ επί<br>${esc(G[2])}</th><th class="n">Αναλογία<br><span class="u">m²</span></th><th></th></tr></thead>
+   <tbody>${rows}<tr class="tot"><td colspan="3">Σύνολο κτιρίων</td><td class="n" data-calc="bt.land"></td><td class="n" data-calc="bt.pm"></td><td class="n" data-calc="bt.plot"></td><td></td></tr></tbody></table></div></div></div>`;
 }
 function quickPanel(){
   const i=S.p.info, ek=i.zone==='ektos';
@@ -372,10 +413,15 @@ function balancePanel(){
    </div></div></div>`;
 }
 function unitOpts(){ return [['','— επίλεξε —'],...S.p.units.map(u=>[u.id,u.code||'(χωρίς όνομα)'])]; }
+function holderSel(x){ const p=S.p; const o=(v,l)=>`<option value="${esc(v)}" ${String(x.unit||'')===String(v)?'selected':''}>${esc(l)}</option>`;
+  let h=o('','— επίλεξε —');
+  if(p.buildings.length) h+=`<optgroup label="Κτίρια (κάθετες ιδιοκτησίες)">${p.buildings.map(b=>o(BLD_PREFIX+b.id,b.code||'(κτίριο)')).join('')}</optgroup><optgroup label="Ιδιοκτησίες">${p.units.map(u=>o(u.id,(u.code||'(χωρίς όνομα)')+(bcode(p,u)?' · '+bcode(p,u):''))).join('')}</optgroup>`;
+  else h+=p.units.map(u=>o(u.id,u.code||'(χωρίς όνομα)')).join('');
+  return `<select id="x-${esc(x.id)}-unit" data-coll="x" data-id="${esc(x.id)}" data-field="unit" data-re="1" aria-label="Ιδιοκτησία ή κτίριο">${h}</select>`; }
 function vExcl(){
   const p=S.p,c=S.c; const hasPts=c.pts.size>0;
   const rows=p.excl.map(x=>`<tr>
-     <td>${SEL('x',x.id,'unit',unitOpts(),x.unit,'data-re="1"')}</td>
+     <td>${holderSel(x)}</td>
      <td>${SEL('x',x.id,'kind',Object.entries(KINDS).map(([k,v])=>[k,v.l]),x.kind,'data-re="1"')}</td>
      <td>${I('x',x.id,'code',x.code,'','style="width:70px"')}</td>
      <td class="n">${I('x',x.id,'area',x.area)}</td>
@@ -385,7 +431,7 @@ function vExcl(){
   return `<section class="sect">
    <div class="sect-head"><div><h2>Αποκλειστικές χρήσεις</h2><p>Τμήματα του ακαλύπτου (κήποι, χώρος πισίνας), θέσεις στάθμευσης και δώματα που παραχωρούνται σε μία ιδιοκτησία. Τα σημεία γράφονται όπως στο διάγραμμα· πολλά πολύγωνα σε ξεχωριστές παρενθέσεις.</p></div>
    <div class="row"><button class="btn" data-act="x-add" data-kind="parking">+ Θέση στάθμευσης</button><button class="btn primary" data-act="x-add" data-kind="garden">+ Αποκλειστική χρήση</button></div></div>
-   <div class="tscroll"><table class="dt"><thead><tr><th>Ιδιοκτησία</th><th>Είδος</th><th>Κωδ.</th><th class="n">Εμβαδόν <span class="u">m²</span></th><th>Σημεία ορίων</th>${hasPts?'<th class="n">Από συντετ.</th>':''}<th></th></tr></thead>
+   <div class="tscroll"><table class="dt"><thead><tr><th>${p.buildings.length?'Ιδιοκτησία / κτίριο':'Ιδιοκτησία'}</th><th>Είδος</th><th>Κωδ.</th><th class="n">Εμβαδόν <span class="u">m²</span></th><th>Σημεία ορίων</th>${hasPts?'<th class="n">Από συντετ.</th>':''}<th></th></tr></thead>
    <tbody>${rows||`<tr><td colspan="7" class="hint" style="padding:16px">Καμία αποκλειστική χρήση. Πρόσθεσε κήπο, χώρο πισίνας ή θέση στάθμευσης.</td></tr>`}
    ${p.excl.length?`<tr class="tot"><td colspan="3">Σύνολο</td><td class="n">${fmt(r2(c.tot.excl+c.tot.park+c.tot.roof))}</td><td colspan="${hasPts?3:2}" class="hint" style="font-weight:500">ακάλυπτος ${fmt(c.tot.excl)} · στάθμευση ${fmt(c.tot.park)}${c.tot.roof?' · δώμα '+fmt(c.tot.roof):''}</td></tr>`:''}</tbody></table></div>
    ${hasPts?'':'<p class="hint">Αν επικολλήσεις συντεταγμένες στην καρτέλα «Συντεταγμένες», εδώ θα εμφανίζεται το εμβαδόν κάθε πολυγώνου για έλεγχο.</p>'}
@@ -407,7 +453,7 @@ function vCommon(){
         <div class="row" style="flex:1;min-width:0">${I('g',g.id,'name',g.name,'wide','style="font-weight:600;max-width:520px" aria-label="Ονομασία ομάδας"')}</div>
         <button class="btn ghost sm danger" data-act="g-del" data-id="${g.id}">Διαγραφή ομάδας</button></header>
       <div class="body">
-        <div><div class="row" style="margin-bottom:8px;justify-content:space-between"><span class="hint">Συμμετέχουν στους χώρους και στις δαπάνες:</span><label class="chk"><input type="checkbox" data-coll="gall" data-id="${g.id}" ${g.all?'checked':''}> Όλες οι ιδιοκτησίες, και όσες προστεθούν</label></div><div class="chipset">${p.units.map(u=>`<label class="chip"><input type="checkbox" data-coll="gu" data-id="${g.id}" data-field="${u.id}" ${GU(p,g).includes(u.id)?'checked':''}> ${esc(u.code||'—')}</label>`).join('')}</div></div>
+        ${g.bld?`<div><span class="hint">Συμμετέχουν όλες οι ιδιοκτησίες του κτιρίου <b>${esc((p.buildings.find(b=>b.id===g.bld)||{}).code||'—')}</b>, και όσες προστεθούν σε αυτό.</span> <button class="btn ghost sm" data-act="g-unbind" data-id="${g.id}">Ελεύθερη επιλογή</button></div>`:`<div><div class="row" style="margin-bottom:8px;justify-content:space-between"><span class="hint">Συμμετέχουν στους χώρους και στις δαπάνες:</span><label class="chk"><input type="checkbox" data-coll="gall" data-id="${g.id}" ${g.all?'checked':''}> Όλες οι ιδιοκτησίες, και όσες προστεθούν</label></div><div class="chipset">${p.units.map(u=>`<label class="chip"><input type="checkbox" data-coll="gu" data-id="${g.id}" data-field="${u.id}" ${GU(p,g).includes(u.id)?'checked':''}> ${esc(u.code||'—')}</label>`).join('')}</div></div>`}
         <div class="cols2">
           <div style="min-width:0"><div class="tscroll"><table class="dt"><thead><tr><th>Περιγραφή χώρου</th><th>Θέση</th><th>Στήλη αναλογισμού</th><th class="n"><span class="u">m²</span></th><th>Σημεία</th>${hasPts?'<th class="n">Από συντετ.</th>':''}<th></th></tr></thead>
             <tbody>${items||`<tr><td colspan="7" class="hint" style="padding:12px">Κανένας χώρος ακόμη.</td></tr>`}${g.items.length?`<tr class="tot"><td colspan="3">Σύνολο</td><td class="n">${fmt(G.sum)}</td><td colspan="${hasPts?3:2}" class="hint" style="font-weight:500">${zones}</td></tr>`:''}</tbody></table></div>
@@ -470,12 +516,17 @@ function updateCalc(){
   const p=S.p,c=S.c,d=Number(p.calc.dec??2);
   $$('[data-calc]').forEach(el=>{ const k=el.dataset.calc.split('.'); let v='';
     if(k[0]==='pmSum') v=fmt(c.pmSum,d)+(el.closest('.fig')?'<small>‰</small>':'');
-    else if(k[0]==='u'){ const cu=c.u[k[1]]; if(!cu) return; const val=cu[k[2]]; v=k[2]==='pm'?fmt(val,d):(k[2]==='excl'||k[2]==='park')&&!val?'—':fmt(val); }
+    else if(k[0]==='u'){ const cu=c.u[k[1]]; if(!cu) return; const val=cu[k[2]]; v=(k[2]==='pm'||k[2]==='pmB')?fmt(val,d):(k[2]==='excl'||k[2]==='park')&&!val?'—':fmt(val); }
     else if(k[0]==='tot') v=fmt(c.tot[k[1]]);
     else if(k[0]==='g'){ const G=c.grp[k[1]]; if(!G) return; v=k[2]==='sum'?fmt(G.allocSum,d):fmt(G.alloc[k[2]],d); }
     else if(k[0]==='x'||k[0]==='c'){ const ca=(k[0]==='x'?c.xcalc:c.ccalc)[k[1]]; const it=k[0]==='x'?p.excl.find(x=>x.id===k[1]):p.groups.flatMap(g=>g.items).find(i=>i.id===k[1]);
       if(ca==null) v='<span class="hint">—</span>'; else { const df=ca-nz(num(it&&it.area)); v=fmt(ca)+`<div class="${Math.abs(df)<=0.05?'diff-ok':'diff-bad'}">${Math.abs(df)<=0.05?'συμφωνεί':'Δ '+fmt(df)}</div>`; } }
     else if(k[0]==='bal'){ const val=c.bal[k[1]]; v=fmt(val); if(k[1]==='diff'&&val!=null) v=`<span class="${Math.abs(val)<=0.05?'diff-ok':'diff-bad'}" style="font-size:13px">${fmt(val)}</span>`; }
+    else if(k[0]==='b'){ const B=c.b[k[1]]; if(!B) return; const f=k[2];
+      const val=f==='exclAll'?r2(nz(B.excl)+nz(B.u_excl)):f==='parkAll'?r2(nz(B.park)+nz(B.u_park)):B[f];
+      v=(f==='pm'||f==='inSum')?fmt(val,d):((f==='exclAll'||f==='parkAll'||f==='land'||f.startsWith('u_'))&&!val)?'—':fmt(val); }
+    else if(k[0]==='bt'){ const L=Object.values(c.b).filter(B=>!B.orphan); const f=k[1];
+      v=f==='pm'?fmt(c.two?c.bpmSum:L.reduce((a,B)=>a+nz(B.pm),0),d):f==='land'?fmt(r2(L.reduce((a,B)=>a+nz(B.land||r2(nz(B.excl)+nz(B.u_excl))),0))):fmt(r2(L.reduce((a,B)=>a+nz(B.plot),0))); }
     else if(k[0]==='ptsCount') v=String(c.pts.size);
     else if(k[0]==='plotB') v=c.plotBoundary==null?'—':fmt(c.plotBoundary)+' m²';
     el.innerHTML=v; });
@@ -492,23 +543,49 @@ function headSub(p){ const i=p.info,G=PLOT_TYPES[i.plotType]||PLOT_TYPES.oik; co
   return parts.length?`<p class="dsub">${parts.join(' · ')}</p>`:''; }
 function mainTitle(p){ if(p.info.titleOverride) return p.info.titleOverride; return {oriz:'ΠΙΝΑΚΑΣ ΑΝΑΛΟΓΙΣΜΟΥ ΟΡΙΖΟΝΤΙΩΝ ΙΔΙΟΚΤΗΣΙΩΝ',kath:'ΠΙΝΑΚΑΣ ΑΝΑΛΟΓΙΣΜΟΥ ΚΑΘΕΤΩΝ ΙΔΙΟΚΤΗΣΙΩΝ',kathoriz:'ΠΙΝΑΚΑΣ ΑΝΑΛΟΓΙΣΜΟΥ ΚΑΘΕΤΩΝ ΚΑΙ ΟΡΙΖΟΝΤΙΩΝ ΙΔΙΟΚΤΗΣΙΩΝ'}[p.info.regime]||'ΠΙΝΑΚΑΣ ΑΝΑΛΟΓΙΣΜΟΥ'; }
 function ptsList(list){ return list.filter(x=>x.boundary).map(x=>esc(x.boundary)).join(' '); }
+/* Κύριος πίνακας: ένα μοντέλο, τρεις αποτυπώσεις (προεπισκόπηση, PDF, Excel) */
+function mainModel(p,c){
+  const G=PLOT_TYPES[p.info.plotType]||PLOT_TYPES.oik, d=Number(p.calc.dec??2), acols=AREA_COLS.filter(a=>p.calc.cols[a.k]!==false);
+  const two=c.two, grouped=p.buildings.length>0, hasPark=c.tot.park>0, hasRoof=c.tot.roof>0, hasCom=Object.values(c.commonCol).some(v=>v>0);
+  const lvTxt=u=>(u.levels||[]).map(l=>`${(LEVELS.find(x=>x[0]===l.name)||[0,l.name])[1]} ${fmt(num(l.area))}`).join(' · ');
+  const exPts=l=>l.filter(x=>x.boundary).map(x=>x.boundary).join(' ');
+  const parkPts=l=>l.map(x=>(x.code?x.code+' ':'')+(x.boundary?'('+x.boundary.replace(/^\(|\)$/g,'')+')':'')).join(' ');
+  const cols=[{k:'label',h:two?'ΚΑΘΕΤΕΣ ΚΑΙ ΟΡΙΖΟΝΤΙΕΣ ΙΔΙΟΚΤΗΣΙΕΣ':p.info.regime==='kath'?'ΚΑΘΕΤΕΣ ΙΔΙΟΚΤΗΣΙΕΣ':'ΟΡΙΖΟΝΤΙΕΣ ΙΔΙΟΚΤΗΣΙΕΣ',t:'label'},
+    ...acols.map(a=>({k:a.k,h:a.d,u:'(m²)',t:'num',dec:2})),
+    ...(two?[{k:'pmB',h:'ΠΟΣΟΣΤΟ ΕΠΙ ΤΗΣ ΚΑΘΕΤΗΣ ΙΔΙΟΚΤΗΣΙΑΣ',u:'(‰)',t:'num',dec:d}]:[]),
+    {k:'pm',h:`ΠΟΣΟΣΤΟ ΣΥΝΙΔΙΟΚΤΗΣΙΑΣ ${G[1]}`,u:'(‰)',t:'num',dec:d},
+    {k:'plot',h:`ΑΝΑΛΟΓΙΑ ${G[1]}`,u:'(m²)',t:'num',dec:2},
+    {k:'excl',h:`ΕΜΒΑΔΑ ΑΠΟΚΛΕΙΣΤΙΚΩΝ ΧΡΗΣΕΩΝ ${G[1]}`,u:'(m²)',note:`άνευ εμβαδών κτισμάτων, ημιυπαίθριων, δεξαμενών${p.calc.exclInclPool?'':', πισινών'}`,t:'area'},
+    ...(hasPark?[{k:'park',h:'ΑΠΟΚΛΕΙΣΤΙΚΕΣ ΧΡΗΣΕΙΣ ΧΩΡΩΝ ΣΤΑΘΜΕΥΣΗΣ',u:'(m²)',t:'area'}]:[]),
+    ...(hasRoof?[{k:'roof',h:'ΑΠΟΚΛΕΙΣΤΙΚΕΣ ΧΡΗΣΕΙΣ ΔΩΜΑΤΟΣ',u:'(m²)',t:'area'}]:[])];
+  const rows=[];
+  const fill=(v,o,lists)=>{ v.excl={area:o.excl,pts:exPts(o.exclList||[])}; if(hasPark) v.park={area:o.park,pts:parkPts(o.parkList||[])}; if(hasRoof) v.roof={area:o.roof,pts:exPts(o.roofList||[])}; };
+  const unitRow=(u,ind)=>{ const cu=c.u[u.id]; const subs=[]; if(!grouped&&bcode(p,u)) subs.push(bcode(p,u)); if(lvTxt(u)) subs.push(lvTxt(u));
+    const v={label:{text:u.code||'',subs,ind}}; acols.forEach(a=>v[a.k]=cu[a.k]); if(two) v.pmB=cu.pmB; v.pm=cu.pm; v.plot=cu.plot; fill(v,cu); rows.push({kind:'unit',v}); };
+  const bldRow=b=>{ const B=c.b[b.id]; const v={label:{text:b.code||'(κτίριο)',subs:[two?'κάθετη ιδιοκτησία':'',b.descr||''].filter(Boolean)}};
+    acols.forEach(a=>v[a.k]=B['u_'+a.k]||null); if(two) v.pmB=B.units.length?B.inSum:null; v.pm=B.pm; v.plot=B.plot; fill(v,B); rows.push({kind:'bld',v}); };
+  if(grouped){
+    p.buildings.forEach(b=>{ bldRow(b); p.units.filter(u=>u.bld===b.id).forEach(u=>unitRow(u,true)); });
+    const orph=p.units.filter(u=>!bOf(p,u)); if(orph.length){ rows.push({kind:'bld',v:{label:{text:'ΧΩΡΙΣ ΚΤΙΡΙΟ',subs:[]}}}); orph.forEach(u=>unitRow(u,true)); }
+  } else p.units.forEach(u=>unitRow(u,false));
+  if(hasCom){ const v={label:{text:'ΚΟΙΝΟΧΡΗΣΤΟΙ',subs:[p.groups.flatMap(g=>g.items.filter(i=>i.col)).map(i=>i.name).join(', ')].filter(Boolean)}}; acols.forEach(a=>v[a.k]=c.commonCol[a.k]||null); rows.push({kind:'common',v}); }
+  const tv={label:{text:'ΣΥΝΟΛΟ',subs:[]}}; acols.forEach(a=>tv[a.k]=r2(c.tot[a.k]+(c.commonCol[a.k]||0))); tv.pm=c.pmSum; tv.plot=c.tot.plot;
+  tv.excl={area:c.tot.excl,pts:''}; if(hasPark) tv.park={area:c.tot.park,pts:''}; if(hasRoof) tv.roof={area:c.tot.roof,pts:''};
+  rows.push({kind:'tot',v:tv});
+  return {cols,rows,two,grouped};
+}
 function docMain(p,c){
-  const G=PLOT_TYPES[p.info.plotType]||PLOT_TYPES.oik, d=Number(p.calc.dec??2), cols=AREA_COLS.filter(a=>p.calc.cols[a.k]!==false);
-  const hasRoof=c.tot.roof>0, hasPark=c.tot.park>0, hasCommonCol=Object.values(c.commonCol).some(v=>v>0);
-  const colH=cols.map(a=>`<th>${a.d}<br>(m²)</th>`).join('');
-  const rows=p.units.map(u=>{ const cu=c.u[u.id]; const lv=(u.levels||[]).map(l=>`${esc((LEVELS.find(x=>x[0]===l.name)||[0,l.name])[1])} ${fmt(num(l.area))}`).join(' · ');
-    return `<tr><td class="lbl">${esc(u.code)}${u.building?`<span class="sm">${esc(u.building)}</span>`:''}${lv?`<span class="sm">${lv}</span>`:''}</td>
-     ${cols.map(a=>`<td class="n">${fmt(cu[a.k])}</td>`).join('')}
-     <td class="n">${fmt(cu.pm,d)}</td><td class="n">${fmt(cu.plot)}</td>
-     <td class="pt">${cu.excl?`<b>${fmt(cu.excl)}</b> ${ptsList(cu.exclList)}`:'<div style="text-align:center">—</div>'}</td>
-     ${hasPark?`<td class="pt">${cu.park?`<b>${fmt(cu.park)}</b> ${cu.parkList.map(x=>(x.code?esc(x.code)+' ':'')+(x.boundary?'('+esc(x.boundary.replace(/^\(|\)$/g,''))+')':'')).join(' ')}`:'<div style="text-align:center">—</div>'}</td>`:''}
-     ${hasRoof?`<td class="pt">${cu.roof?`<b>${fmt(cu.roof)}</b> ${ptsList(cu.roofList)}`:'—'}</td>`:''}</tr>`; }).join('');
-  const comRow=hasCommonCol?`<tr><td class="lbl">ΚΟΙΝΟΧΡΗΣΤΟΙ<span class="sm">${esc(p.groups.flatMap(g=>g.items.filter(i=>i.col)).map(i=>i.name).join(', '))}</span></td>${cols.map(a=>`<td class="n">${c.commonCol[a.k]?fmt(c.commonCol[a.k]):'—'}</td>`).join('')}<td class="n">—</td><td class="n">—</td><td class="c">—</td>${hasPark?'<td class="c">—</td>':''}${hasRoof?'<td class="c">—</td>':''}</tr>`:'';
-  const tot=`<tr class="tot"><td class="lbl">ΣΥΝΟΛΟ</td>${cols.map(a=>`<td class="n">${fmt(r2(c.tot[a.k]+(c.commonCol[a.k]||0)))}</td>`).join('')}<td class="n">${fmt(c.pmSum,d)}</td><td class="n">${fmt(c.tot.plot)}</td><td class="n" style="text-align:left">${fmt(c.tot.excl)}</td>${hasPark?`<td class="n" style="text-align:left">${fmt(c.tot.park)}</td>`:''}${hasRoof?`<td class="n">${fmt(c.tot.roof)}</td>`:''}</tr>`;
+  const M=mainModel(p,c);
+  const th=M.cols.map(k=>`<th>${esc(k.h)}${k.u?'<br>'+k.u:''}${k.note?`<br><span style="font-weight:400;text-transform:none">${esc(k.note)}</span>`:''}</th>`).join('');
+  const cell=(k,val,kind)=>{
+    if(k.t==='label'){ const L=val||{text:'',subs:[]}; return `<td class="lbl${L.ind?' ind':''}">${esc(L.text)}${L.subs.map(x=>`<span class="sm">${esc(x)}</span>`).join('')}</td>`; }
+    if(k.t==='area'){ if(!val||!val.area) return '<td class="c">—</td>'; return kind==='tot'?`<td class="n" style="text-align:left">${fmt(val.area)}</td>`:`<td class="pt"><b>${fmt(val.area)}</b> ${esc(val.pts)}</td>`; }
+    return val==null?'<td class="c">—</td>':`<td class="n">${fmt(val,k.dec)}</td>`; };
+  const trs=M.rows.map(r=>`<tr class="${r.kind}">${M.cols.map(k=>cell(k,r.v[k.k],r.kind)).join('')}</tr>`).join('');
+  const note=M.two?'Το ποσοστό κάθε οριζόντιας ιδιοκτησίας επί του όλου προκύπτει από το ποσοστό της επί της κάθετης ιδιοκτησίας επί το ποσοστό της κάθετης ιδιοκτησίας. ':'';
   return `<section class="doc"><h4>${esc(mainTitle(p))}</h4>${headSub(p)}
-   <table><thead><tr><th>${p.info.regime==='kath'?'ΚΑΘΕΤΕΣ':'ΟΡΙΖΟΝΤΙΕΣ'}<br>ΙΔΙΟΚΤΗΣΙΕΣ</th>${colH}<th>ΠΟΣΟΣΤΟ ΣΥΝΙΔΙΟΚΤΗΣΙΑΣ ${G[1]} (‰)</th><th>ΑΝΑΛΟΓΙΑ ${G[1]}<br>(m²)</th><th>ΕΜΒΑΔΑ ΑΠΟΚΛΕΙΣΤΙΚΩΝ ΧΡΗΣΕΩΝ ${G[1]} (m²)<br><span style="font-weight:400;text-transform:none">άνευ εμβαδών κτισμάτων, ημιυπαίθριων, δεξαμενών${p.calc.exclInclPool?'':', πισινών'}</span></th>${hasPark?'<th>ΑΠΟΚΛΕΙΣΤΙΚΕΣ ΧΡΗΣΕΙΣ ΧΩΡΩΝ ΣΤΑΘΜΕΥΣΗΣ (m²)</th>':''}${hasRoof?'<th>ΑΠΟΚΛΕΙΣΤΙΚΕΣ ΧΡΗΣΕΙΣ ΔΩΜΑΤΟΣ (m²)</th>':''}</tr></thead>
-   <tbody>${rows}${comRow}${tot}</tbody></table>
-   <p class="note">Τα σημεία ορίων αναφέρονται στο συνημμένο διάγραμμα αποκλειστικών χρήσεων${c.pts.size?' (συντεταγμένες ΕΓΣΑ ’87)':''}.</p>${stampHTML(p)}</section>`;
+   <table><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table>
+   <p class="note">${note}Τα σημεία ορίων αναφέρονται στο συνημμένο διάγραμμα αποκλειστικών χρήσεων${c.pts.size?' (συντεταγμένες ΕΓΣΑ ’87)':''}.</p>${stampHTML(p)}</section>`;
 }
 function docCommon(p,c){
   if(!p.groups.length) return '';
@@ -528,18 +605,21 @@ function docCommon(p,c){
 }
 function docExcl(p,c){
   if(!p.excl.length) return '';
-  const order=p.units.map(u=>u.id);
-  const L=[...p.excl].sort((a,b)=>order.indexOf(a.unit)-order.indexOf(b.unit));
+  const L=exclOrdered(p);
   return `<section class="doc"><h4>ΠΙΝΑΚΑΣ ΑΠΟΚΛΕΙΣΤΙΚΩΝ ΧΡΗΣΕΩΝ</h4>${headSub(p)}
-   <table><thead><tr><th>ΙΔΙΟΚΤΗΣΙΑ</th><th>ΕΙΔΟΣ ΧΩΡΟΥ</th><th>ΚΩΔ.</th><th>ΕΜΒΑΔΟΝ (m²)</th><th>ΣΗΜΕΙΑ ΟΡΙΩΝ</th></tr></thead><tbody>
-   ${L.map(x=>{const u=p.units.find(u=>u.id===x.unit);return `<tr><td class="lbl">${esc(u?u.code:'—')}</td><td>${esc((KINDS[x.kind]||KINDS.other).l)}</td><td class="c">${esc(x.code)||'—'}</td><td class="n">${fmt(num(x.area))}</td><td class="pt">${esc(x.boundary)||'—'}</td></tr>`;}).join('')}
+   <table><thead><tr><th>${p.buildings.length?'ΙΔΙΟΚΤΗΣΙΑ / ΚΤΙΡΙΟ':'ΙΔΙΟΚΤΗΣΙΑ'}</th><th>ΕΙΔΟΣ ΧΩΡΟΥ</th><th>ΚΩΔ.</th><th>ΕΜΒΑΔΟΝ (m²)</th><th>ΣΗΜΕΙΑ ΟΡΙΩΝ</th></tr></thead><tbody>
+   ${L.map(x=>{const h=holder(p,x.unit);return `<tr><td class="lbl">${esc(h?h.code:'—')}</td><td>${esc((KINDS[x.kind]||KINDS.other).l)}</td><td class="c">${esc(x.code)||'—'}</td><td class="n">${fmt(num(x.area))}</td><td class="pt">${esc(x.boundary)||'—'}</td></tr>`;}).join('')}
    <tr class="tot"><td colspan="3">ΣΥΝΟΛΟ</td><td class="n">${fmt(r2(c.tot.excl+c.tot.park+c.tot.roof))}</td><td></td></tr></tbody></table>${stampHTML(p)}</section>`;
 }
+/** Αποκλειστικές χρήσεις με τη σειρά του πίνακα: κτίριο, μετά οι ιδιοκτησίες του. */
+function exclOrdered(p){ const order=[]; if(p.buildings.length){ p.buildings.forEach(b=>{ order.push(BLD_PREFIX+b.id); p.units.filter(u=>u.bld===b.id).forEach(u=>order.push(u.id)); }); p.units.filter(u=>!bOf(p,u)).forEach(u=>order.push(u.id)); } else p.units.forEach(u=>order.push(u.id));
+  const ix=x=>{ const k=order.indexOf(x.unit); return k<0?1e9:k; }; return [...p.excl].sort((a,b)=>ix(a)-ix(b)); }
 const LETTERS='αβγδεζηθικλμνξοπρστυφχψω';
+function exclText(list){ return list.map((x,i)=>`${list.length>1?LETTERS[i]+') ':''}${(KINDS[x.kind]||KINDS.other).txt}${x.code?' με στοιχείο '+x.code:''} εμβαδού ${fmt(num(x.area))} τ.μ.${x.boundary?', που ορίζεται από τα σημεία '+(x.boundary.trim().startsWith('(')?x.boundary.trim():'('+x.boundary.trim()+')'):''}`).join(', '); }
 function unitDescription(p,c,u){
   if(u.descr&&u.descr.trim()) return u.descr.trim();
-  const cu=c.u[u.id],G=PLOT_TYPES[p.info.plotType]||PLOT_TYPES.oik,d=Number(p.calc.dec??2);
-  const kind=p.info.regime==='kath'?'αυτοτελής και ανεξάρτητη κάθετη ιδιοκτησία':p.info.regime==='kathoriz'?'αυτοτελής και ανεξάρτητη ιδιοκτησία':'αυτοτελής και ανεξάρτητη οριζόντια ιδιοκτησία';
+  const cu=c.u[u.id],G=PLOT_TYPES[p.info.plotType]||PLOT_TYPES.oik,d=Number(p.calc.dec??2), b=bOf(p,u), two=c.two&&b;
+  const kind=p.info.regime==='kath'?'αυτοτελής και ανεξάρτητη κάθετη ιδιοκτησία':p.info.regime==='kathoriz'?(two?'αυτοτελής και ανεξάρτητη οριζόντια ιδιοκτησία':'αυτοτελής και ανεξάρτητη ιδιοκτησία'):'αυτοτελής και ανεξάρτητη οριζόντια ιδιοκτησία';
   const parts=[];
   if(u.levels&&u.levels.length) parts.push(u.levels.map(l=>`${String(l.name).toLowerCase().replace(/^α' |^β' |^γ' |^δ' /,m=>m.toUpperCase())} εμβαδού ${fmt(num(l.area))} τ.μ.`).join(', ')+` (σύνολο κυρίων χώρων ${fmt(cu.main)} τ.μ.)`);
   else if(cu.main) parts.push(`κύριους χώρους εμβαδού ${fmt(cu.main)} τ.μ.`);
@@ -547,16 +627,33 @@ function unitDescription(p,c,u){
   if(cu.base) parts.push(`υπόγειο βοηθητικό χώρο (αποθήκη) εμβαδού ${fmt(cu.base)} τ.μ.`);
   if(cu.pool) parts.push(`πισίνα εμβαδού ${fmt(cu.pool)} τ.μ.`);
   if(cu.tanks) parts.push(`υπόγειες δεξαμενές εμβαδού ${fmt(cu.tanks)} τ.μ.`);
-  let t=`${UP(u.code)}${u.building?' ('+u.building+')':''}: ${kind} (${String(u.type).toLowerCase()})`;
+  let t=`${UP(u.code)}${b?(two?' της καθέτου ιδιοκτησίας «'+b.code+'»':' ('+b.code+')'):''}: ${kind} (${String(u.type).toLowerCase()})`;
   if(parts.length) t+=', η οποία περιλαμβάνει '+parts.join(', ');
-  t=t.replace(/\.$/,'')+`. Της αναλογεί ποσοστό συνιδιοκτησίας ${fmt(cu.pm,d)}‰ εξ αδιαιρέτου επί του όλου ${G[2]}, ήτοι ${fmt(cu.plot)} τ.μ.`;
+  t=t.replace(/\.$/,'');
+  if(two) t+=`. Της αναλογεί ποσοστό ${fmt(cu.pmB,d)}‰ εξ αδιαιρέτου επί της καθέτου ιδιοκτησίας «${b.code}» και ποσοστό ${fmt(cu.pm,d)}‰ εξ αδιαιρέτου επί του όλου ${G[2]}, ήτοι ${fmt(cu.plot)} τ.μ.`;
+  else t+=`. Της αναλογεί ποσοστό συνιδιοκτησίας ${fmt(cu.pm,d)}‰ εξ αδιαιρέτου επί του όλου ${G[2]}, ήτοι ${fmt(cu.plot)} τ.μ.`;
   const xs=p.excl.filter(x=>x.unit===u.id);
-  if(xs.length){ t+=` Στην ιδιοκτησία αυτή παραχωρείται, ως παρακολούθημα, το δικαίωμα αποκλειστικής χρήσης `+xs.map((x,i)=>`${xs.length>1?LETTERS[i]+') ':''}${(KINDS[x.kind]||KINDS.other).txt}${x.code?' με στοιχείο '+x.code:''} εμβαδού ${fmt(num(x.area))} τ.μ.${x.boundary?', που ορίζεται από τα σημεία '+(x.boundary.trim().startsWith('(')?x.boundary.trim():'('+x.boundary.trim()+')'):''}`).join(', ')+` του συνημμένου διαγράμματος.`; }
+  if(xs.length) t+=` Στην ιδιοκτησία αυτή παραχωρείται, ως παρακολούθημα, το δικαίωμα αποκλειστικής χρήσης ${exclText(xs)} του συνημμένου διαγράμματος.`;
   const gs=p.groups.filter(g=>GU(p,g).includes(u.id));
   if(gs.length) t+=' Συμμετέχει '+gs.map(g=>`στους κοινόχρηστους χώρους «${g.name}» και στις δαπάνες τους με ποσοστό ${fmt(c.grp[g.id].alloc[u.id],d)}‰`).join(' και ')+'.';
   return t;
 }
-function docDescr(p,c){ return `<section class="doc"><h4>ΠΕΡΙΓΡΑΦΗ ΙΔΙΟΚΤΗΣΙΩΝ</h4>${headSub(p)}<div class="descr">${p.units.map(u=>`<p>${esc(unitDescription(p,c,u))}</p>`).join('')}</div>${stampHTML(p)}</section>`; }
+function buildingDescription(p,c,b){
+  const B=c.b[b.id],G=PLOT_TYPES[p.info.plotType]||PLOT_TYPES.oik,d=Number(p.calc.dec??2);
+  const us=p.units.filter(u=>u.bld===b.id).map(u=>u.code).filter(Boolean);
+  let t=`${UP(b.code)}: αυτοτελής και ανεξάρτητη κάθετη ιδιοκτησία${b.descr?' ('+b.descr+')':''}`;
+  if(us.length) t+=`, η οποία διαιρείται στις οριζόντιες ιδιοκτησίες ${us.join(', ')}`;
+  t+=`. Της αναλογεί ποσοστό ${fmt(B.pm,d)}‰ εξ αδιαιρέτου επί του όλου ${G[2]}, ήτοι ${fmt(B.plot)} τ.μ.`;
+  const xs=p.excl.filter(x=>x.unit===BLD_PREFIX+b.id);
+  if(xs.length) t+=` Στην κάθετη αυτή ιδιοκτησία παραχωρείται, ως παρακολούθημα, το δικαίωμα αποκλειστικής χρήσης ${exclText(xs)} του συνημμένου διαγράμματος.`;
+  return t;
+}
+function descrList(p,c){ const out=[];
+  if(p.buildings.length&&c.two){ p.buildings.forEach(b=>{ out.push({bld:true,text:buildingDescription(p,c,b)}); p.units.filter(u=>u.bld===b.id).forEach(u=>out.push({text:unitDescription(p,c,u)})); }); p.units.filter(u=>!bOf(p,u)).forEach(u=>out.push({text:unitDescription(p,c,u)})); }
+  else if(p.buildings.length){ p.buildings.forEach(b=>p.units.filter(u=>u.bld===b.id).forEach(u=>out.push({text:unitDescription(p,c,u)}))); p.units.filter(u=>!bOf(p,u)).forEach(u=>out.push({text:unitDescription(p,c,u)})); }
+  else p.units.forEach(u=>out.push({text:unitDescription(p,c,u)}));
+  return out; }
+function docDescr(p,c){ return `<section class="doc"><h4>ΠΕΡΙΓΡΑΦΗ ΙΔΙΟΚΤΗΣΙΩΝ</h4>${headSub(p)}<div class="descr">${descrList(p,c).map(x=>`<p${x.bld?' class="bld"':''}>${esc(x.text)}</p>`).join('')}</div>${stampHTML(p)}</section>`; }
 function docCoords(p,c){ if(!c.pts.size) return ''; const arr=[...c.pts.values()]; const half=Math.ceil(arr.length/3);
   const t=k=>`<table><thead><tr><th>Σ.</th><th>X</th><th>Y</th></tr></thead><tbody>${arr.slice(k*half,(k+1)*half).map(([x,y,n])=>`<tr><td class="lbl">${esc(n)}</td><td class="n">${x.toFixed(3)}</td><td class="n">${y.toFixed(3)}</td></tr>`).join('')}</tbody></table>`;
   return `<section class="doc"><h4>ΠΙΝΑΚΑΣ ΣΥΝΤΕΤΑΓΜΕΝΩΝ ΣΗΜΕΙΩΝ (ΕΓΣΑ ’87)</h4>${headSub(p)}<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;align-items:start">${t(0)}${t(1)}${t(2)}</div>${stampHTML(p)}</section>`; }
@@ -589,17 +686,24 @@ async function dlXLSX(btn){
     lines.forEach(([l,r],i)=>{ const row=ws.addRow([]); if(n<2){ row.getCell(1).value=r||l; row.getCell(1).font={size:9,bold:i===0}; return; } row.getCell(1).value=l; row.getCell(n).value=r; row.getCell(n).alignment={horizontal:'right'}; row.getCell(n).font={size:9,bold:i===0}; row.getCell(1).font={size:9}; }); }
   const o=p.out||{main:true,common:true,excl:true,descr:true};
   // main
-  if(o.main){ const cols=AREA_COLS.filter(a=>p.calc.cols[a.k]!==false), hasPark=c.tot.park>0, hasRoof=c.tot.roof>0;
-    const H=[p.info.regime==='kath'?'ΚΑΘΕΤΕΣ ΙΔΙΟΚΤΗΣΙΕΣ':'ΟΡΙΖΟΝΤΙΕΣ ΙΔΙΟΚΤΗΣΙΕΣ','ΕΠΙΠΕΔΑ',...cols.map(a=>a.d+' (m²)'),`ΠΟΣΟΣΤΟ ΣΥΝΙΔΙΟΚΤΗΣΙΑΣ ${G[1]} (‰)`,`ΑΝΑΛΟΓΙΑ ${G[1]} (m²)`,`ΑΠΟΚΛΕΙΣΤΙΚΕΣ ΧΡΗΣΕΙΣ ${G[1]} (m²)`,'ΣΗΜΕΙΑ',...(hasPark?['ΘΕΣΕΙΣ ΣΤΑΘΜΕΥΣΗΣ (m²)','ΣΗΜΕΙΑ']:[]),...(hasRoof?['ΔΩΜΑ (m²)','ΣΗΜΕΙΑ']:[])];
-    const ws=sheet('Αναλογισμός',[18,16,...cols.map(()=>11),12,12,12,42,...(hasPark?[11,24]:[]),...(hasRoof?[11,24]:[])]);
-    title(ws,mainTitle(p),H.length); head(ws,H);
-    const F=[null,null,...cols.map(()=>'0.00'),nf(d),'0.00','0.00',null,...(hasPark?['0.00',null]:[]),...(hasRoof?['0.00',null]:[])];
-    p.units.forEach(u=>{ const cu=c.u[u.id]; body(ws,[u.code+(u.building?' ('+u.building+')':''),(u.levels||[]).map(l=>`${(LEVELS.find(x=>x[0]===l.name)||[0,l.name])[1]} ${fmt(num(l.area))}`).join(' / '),...cols.map(a=>cu[a.k]??'—'),cu.pm??'—',cu.plot??'—',cu.excl||'—',cu.exclList.map(x=>x.boundary).join(' '),...(hasPark?[cu.park||'—',cu.parkList.map(x=>(x.code?x.code+' ':'')+x.boundary).join(' ')]:[]),...(hasRoof?[cu.roof||'—',cu.roofList.map(x=>x.boundary).join(' ')]:[])],F); });
-    if(Object.values(c.commonCol).some(v=>v>0)) body(ws,['ΚΟΙΝΟΧΡΗΣΤΟΙ','',...cols.map(a=>c.commonCol[a.k]||'—'),'—','—','—','',...(hasPark?['—','']:[]),...(hasRoof?['—','']:[])],F);
-    const lastData=ws.lastRow.number, firstData=lastData-p.units.length+1-(Object.values(c.commonCol).some(v=>v>0)?1:0);
-    const tr=body(ws,['ΣΥΝΟΛΟ','',...cols.map(a=>r2(c.tot[a.k]+(c.commonCol[a.k]||0))),c.pmSum,c.tot.plot,c.tot.excl,'',...(hasPark?[c.tot.park,'']:[]),...(hasRoof?[c.tot.roof,'']:[])],F,true);
-    tr.eachCell((cl,ci)=>{ if(typeof cl.value==='number'){ const L=ws.getColumn(ci).letter; cl.value={formula:`SUM(${L}${firstData}:${L}${lastData})`,result:cl.value}; } });
-    sign(ws,H.length); }
+  if(o.main){ const M=mainModel(p,c);
+    // κάθε στήλη «area» σπάει σε δύο: εμβαδόν και σημεία
+    const X=[]; M.cols.forEach(k=>{ if(k.t==='label'){ X.push({k,part:'text',h:k.h,w:20}); X.push({k,part:'subs',h:'ΣΤΟΙΧΕΙΑ',w:18}); }
+      else if(k.t==='area'){ X.push({k,part:'area',h:`${k.h} ${k.u}`,w:12,f:'0.00'}); X.push({k,part:'pts',h:'ΣΗΜΕΙΑ',w:k.k==='excl'?42:24}); }
+      else X.push({k,part:'num',h:`${k.h} ${k.u}`,w:12,f:nf(k.dec)}); });
+    const ws=sheet('Αναλογισμός',X.map(x=>x.w)); title(ws,mainTitle(p),X.length); head(ws,X.map(x=>x.h));
+    const F=X.map(x=>x.f||null), sumRows=[];
+    M.rows.forEach(r=>{ const vals=X.map(x=>{ const v=r.v[x.k.k];
+        if(x.part==='text') return (v&&v.text)||''; if(x.part==='subs') return v?(v.subs||[]).join(' · '):'';
+        if(x.part==='area') return v&&v.area?v.area:'—'; if(x.part==='pts') return (v&&v.pts)||'';
+        return v==null?'—':v; });
+      const row=body(ws,vals,F,r.kind==='tot'||r.kind==='bld');
+      if(r.kind==='bld') row.eachCell(cl=>cl.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF7F7F7'}});
+      if(r.kind==='unit'||r.kind==='common') sumRows.push(row.number);
+      if(r.kind==='tot'){ // σύνολα ως τύποι, μόνο πάνω στις γραμμές ιδιοκτησιών (όχι στις γραμμές κτιρίων)
+        const ranges=[]; sumRows.forEach(n=>{ const L=ranges[ranges.length-1]; if(L&&L[1]===n-1) L[1]=n; else ranges.push([n,n]); });
+        row.eachCell((cl,ci)=>{ if(typeof cl.value==='number'&&ci>2){ const Lt=ws.getColumn(ci).letter; cl.value={formula:'SUM('+ranges.map(([a,b])=>a===b?`${Lt}${a}`:`${Lt}${a}:${Lt}${b}`).join(',')+')',result:cl.value}; } }); } });
+    sign(ws,X.length); }
   if(o.common&&p.groups.length){ const ws=sheet('Κοινόχρηστα',[44,12,48,4,22,12]); title(ws,'ΠΙΝΑΚΑΣ ΚΟΙΝΟΧΡΗΣΤΩΝ ΧΩΡΩΝ ΚΑΙ ΚΑΤΑΝΟΜΗΣ ΔΑΠΑΝΩΝ',6);
     p.groups.forEach(g=>{ const C=c.grp[g.id]; const r=ws.addRow([UP(g.name)]); r.font={bold:true,size:10}; ws.mergeCells(r.number,1,r.number,6);
       const hr=ws.addRow(['ΠΕΡΙΓΡΑΦΗ ΧΩΡΩΝ','(m²)','ΣΗΜΕΙΑ ΠΕΡΙΓΡΑΦΗΣ ΧΩΡΟΥ','','ΙΔΙΟΚΤΗΣΙΕΣ','‰']); [1,2,3,5,6].forEach(i=>{const cl=hr.getCell(i);cl.font={bold:true,size:9};cl.border=B;cl.alignment={horizontal:'center',wrapText:true};cl.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF1F1F1'}};});
@@ -612,9 +716,9 @@ async function dlXLSX(btn){
       ws.addRow([]); });
     sign(ws,6); }
   if(o.excl&&p.excl.length){ const ws=sheet('Αποκλειστικές',[18,26,8,12,70]); title(ws,'ΠΙΝΑΚΑΣ ΑΠΟΚΛΕΙΣΤΙΚΩΝ ΧΡΗΣΕΩΝ',5); head(ws,['ΙΔΙΟΚΤΗΣΙΑ','ΕΙΔΟΣ ΧΩΡΟΥ','ΚΩΔ.','ΕΜΒΑΔΟΝ (m²)','ΣΗΜΕΙΑ ΟΡΙΩΝ']);
-    const order=p.units.map(u=>u.id); [...p.excl].sort((a,b)=>order.indexOf(a.unit)-order.indexOf(b.unit)).forEach(x=>{const u=p.units.find(u=>u.id===x.unit);body(ws,[u?u.code:'—',(KINDS[x.kind]||KINDS.other).l,x.code||'—',num(x.area),x.boundary||'—'],[null,null,null,'0.00',null]);});
+    exclOrdered(p).forEach(x=>{const h=holder(p,x.unit);body(ws,[h?h.code:'—',(KINDS[x.kind]||KINDS.other).l,x.code||'—',num(x.area),x.boundary||'—'],[null,null,null,'0.00',null]);});
     body(ws,['ΣΥΝΟΛΟ','','',r2(c.tot.excl+c.tot.park+c.tot.roof),''],[null,null,null,'0.00',null],true); sign(ws,5); }
-  if(o.descr){ const ws=sheet('Περιγραφές',[150]); title(ws,'ΠΕΡΙΓΡΑΦΗ ΙΔΙΟΚΤΗΣΙΩΝ',1); p.units.forEach(u=>{const r=ws.addRow([unitDescription(p,c,u)]);r.alignment={wrapText:true,vertical:'top'};r.font={size:10};r.height=Math.max(30,Math.ceil(unitDescription(p,c,u).length/150)*14);}); sign(ws,1); }
+  if(o.descr){ const ws=sheet('Περιγραφές',[150]); title(ws,'ΠΕΡΙΓΡΑΦΗ ΙΔΙΟΚΤΗΣΙΩΝ',1); descrList(p,c).forEach(x=>{const r=ws.addRow([x.text]);r.alignment={wrapText:true,vertical:'top'};r.font={size:10,bold:!!x.bld};r.height=Math.max(30,Math.ceil(x.text.length/150)*14);}); sign(ws,1); }
   if(o.coords&&c.pts.size){ const ws=sheet('Συντεταγμένες',[12,16,16]); title(ws,'ΠΙΝΑΚΑΣ ΣΥΝΤΕΤΑΓΜΕΝΩΝ (ΕΓΣΑ 87)',3); head(ws,['ΣΗΜΕΙΟ','X','Y']); [...c.pts.values()].forEach(([x,y,n])=>body(ws,[n,x,y],[null,'0.000','0.000'])); }
   if(!wb.worksheets.length){ toast('Επίλεξε τουλάχιστον έναν πίνακα.'); return; }
   const buf=await wb.xlsx.writeBuffer();
@@ -651,22 +755,16 @@ function pdfDef(p,c,o){
     {width:250,table:{widths:['*'],body:[[{alignment:'center',fontSize:7.5,stack:[{text:UP(e.name||''),bold:true,fontSize:8.5},e.title||'',e.office||'',e.address||'',[e.tee&&('Α.Μ. ΤΕΕ: '+e.tee),e.afm&&('ΑΦΜ: '+e.afm)].filter(Boolean).join(' · '),e.phone?('Τηλ.: '+e.phone):'',{text:'(υπογραφή – σφραγίδα)',color:'#555555',margin:[0,26,0,0]}].filter(x=>x!=='')}]]},layout:LAY}]});
   const secs=[];
   if(o.main){
-    const cols=AREA_COLS.filter(a=>p.calc.cols[a.k]!==false), hasPark=c.tot.park>0, hasRoof=c.tot.roof>0, hasCom=Object.values(c.commonCol).some(v=>v>0);
-    const widths=[78,...cols.map(()=>42),62,56,'*',...(hasPark?[112]:[]),...(hasRoof?[90]:[])];
-    const hdr=[H(p.info.regime==='kath'?'ΚΑΘΕΤΕΣ\nΙΔΙΟΚΤΗΣΙΕΣ':'ΟΡΙΖΟΝΤΙΕΣ\nΙΔΙΟΚΤΗΣΙΕΣ'),...cols.map(a=>H(a.d+'\n(m²)')),H(`ΠΟΣΟΣΤΟ\nΣΥΝΙΔΙΟΚΤΗΣΙΑΣ\n${G[1]} (‰)`),H(`ΑΝΑΛΟΓΙΑ\n${G[1]}\n(m²)`),
-      H([{text:`ΕΜΒΑΔΑ ΑΠΟΚΛΕΙΣΤΙΚΩΝ ΧΡΗΣΕΩΝ ${G[1]} (m²)\n`},{text:`άνευ εμβαδών κτισμάτων, ημιυπαίθριων, δεξαμενών${p.calc.exclInclPool?'':', πισινών'}`,bold:false,fontSize:6}]),...(hasPark?[H('ΑΠΟΚΛΕΙΣΤΙΚΕΣ ΧΡΗΣΕΙΣ ΧΩΡΩΝ ΣΤΑΘΜΕΥΣΗΣ (m²)')]:[]),...(hasRoof?[H('ΑΠΟΚΛΕΙΣΤΙΚΕΣ ΧΡΗΣΕΙΣ ΔΩΜΑΤΟΣ (m²)')]:[])];
-    const pts=(v,list,fmtList)=>v?{stack:[{text:fmt(v),bold:true},{text:fmtList(list),fontSize:6,margin:[0,1,0,0]}]}:D();
-    const body=[hdr];
-    p.units.forEach(u=>{ const cu=c.u[u.id]; const lv=(u.levels||[]).map(l=>`${(LEVELS.find(x=>x[0]===l.name)||[0,l.name])[1]} ${fmt(num(l.area))}`).join(' · ');
-      body.push([{stack:[L(u.code),...(u.building?[{text:u.building,fontSize:6.5}]:[]),...(lv?[{text:lv,fontSize:6.5,margin:[0,1,0,0]}]:[])]},
-        ...cols.map(a=>cu[a.k]==null?D():N(cu[a.k])),N(cu.pm,d),N(cu.plot),
-        pts(cu.excl,cu.exclList,l=>l.filter(x=>x.boundary).map(x=>x.boundary).join(' ')),
-        ...(hasPark?[pts(cu.park,cu.parkList,l=>l.map(x=>(x.code?x.code+' ':'')+(x.boundary?'('+x.boundary.replace(/^\(|\)$/g,'')+')':'')).join(' '))]:[]),
-        ...(hasRoof?[pts(cu.roof,cu.roofList,l=>l.map(x=>x.boundary).join(' '))]:[])]); });
-    if(hasCom) body.push([{stack:[L('ΚΟΙΝΟΧΡΗΣΤΟΙ'),{text:p.groups.flatMap(g=>g.items.filter(x=>x.col)).map(x=>x.name).join(', '),fontSize:6.5}]},...cols.map(a=>c.commonCol[a.k]?N(c.commonCol[a.k]):D()),D(),D(),D(),...(hasPark?[D()]:[]),...(hasRoof?[D()]:[])]);
-    const F='#f1f1f1';
-    body.push([L('ΣΥΝΟΛΟ',{fillColor:F}),...cols.map(a=>N(r2(c.tot[a.k]+(c.commonCol[a.k]||0)),2,{bold:true,fillColor:F})),N(c.pmSum,d,{bold:true,fillColor:F}),N(c.tot.plot,2,{bold:true,fillColor:F}),{text:fmt(c.tot.excl),bold:true,fillColor:F},...(hasPark?[{text:fmt(c.tot.park),bold:true,fillColor:F}]:[]),...(hasRoof?[{text:fmt(c.tot.roof),bold:true,fillColor:F}]:[])]);
-    secs.push([...head(mainTitle(p)),{table:{headerRows:1,dontBreakRows:true,widths,body},layout:LAY,fontSize:7.5},{text:`Τα σημεία ορίων αναφέρονται στο συνημμένο διάγραμμα αποκλειστικών χρήσεων${c.pts.size?' (συντεταγμένες ΕΓΣΑ ’87)':''}.`,fontSize:6.5,color:'#444444',margin:[0,4,0,0]},sign()]);
+    const M=mainModel(p,c), F='#f1f1f1', BF='#f7f7f7';
+    const widths=M.cols.map(k=>k.t==='label'?82:k.t==='area'?(k.k==='excl'?'*':100):(k.k==='pmB'||k.k==='pm')?56:k.k==='plot'?52:40);
+    const hdr=M.cols.map(k=>k.note?H([{text:`${k.h} ${k.u}\n`},{text:k.note,bold:false,fontSize:6}]):H(`${k.h}${k.u?'\n'+k.u:''}`));
+    const cell=(k,val,kind)=>{ const x=kind==='tot'?{bold:true,fillColor:F}:kind==='bld'?{bold:true,fillColor:BF}:{};
+      if(k.t==='label'){ const Lb=val||{text:'',subs:[]}; return Object.assign({stack:[L(Lb.text),...Lb.subs.map(t=>({text:t,fontSize:6.5,margin:[0,1,0,0]}))],margin:[Lb.ind?8:0,0,0,0]},x.fillColor?{fillColor:x.fillColor}:{}); }
+      if(k.t==='area'){ if(!val||!val.area) return Object.assign(D(),x); if(kind==='tot') return Object.assign({text:fmt(val.area)},x); return Object.assign({stack:[{text:fmt(val.area),bold:true},...(val.pts?[{text:val.pts,fontSize:6,margin:[0,1,0,0]}]:[])]},x); }
+      return val==null?Object.assign(D(),x):N(val,k.dec,x); };
+    const body=[hdr,...M.rows.map(r=>M.cols.map(k=>cell(k,r.v[k.k],r.kind)))];
+    const note=M.two?'Το ποσοστό κάθε οριζόντιας ιδιοκτησίας επί του όλου προκύπτει από το ποσοστό της επί της κάθετης ιδιοκτησίας επί το ποσοστό της κάθετης ιδιοκτησίας. ':'';
+    secs.push([...head(mainTitle(p)),{table:{headerRows:1,dontBreakRows:true,widths,body},layout:LAY,fontSize:7.5},{text:`${note}Τα σημεία ορίων αναφέρονται στο συνημμένο διάγραμμα αποκλειστικών χρήσεων${c.pts.size?' (συντεταγμένες ΕΓΣΑ ’87)':''}.`,fontSize:6.5,color:'#444444',margin:[0,4,0,0]},sign()]);
   }
   if(o.common&&p.groups.length){
     const st=[...head('ΠΙΝΑΚΑΣ ΚΟΙΝΟΧΡΗΣΤΩΝ ΧΩΡΩΝ ΚΑΙ ΚΑΤΑΝΟΜΗΣ ΔΑΠΑΝΩΝ')];
@@ -683,11 +781,10 @@ function pdfDef(p,c,o){
     st.push(sign()); secs.push(st);
   }
   if(o.excl&&p.excl.length){
-    const order=p.units.map(u=>u.id);
-    const rows=[...p.excl].sort((a,b)=>order.indexOf(a.unit)-order.indexOf(b.unit)).map(x=>{const u=p.units.find(u=>u.id===x.unit);return [L(u?u.code:'—'),(KINDS[x.kind]||KINDS.other).l,{text:x.code||'—',alignment:'center'},N(a2(x.area)),{text:x.boundary||'—',fontSize:6.5}];});
-    secs.push([...head('ΠΙΝΑΚΑΣ ΑΠΟΚΛΕΙΣΤΙΚΩΝ ΧΡΗΣΕΩΝ'),{table:{headerRows:1,dontBreakRows:true,widths:[80,110,40,60,'*'],body:[[H('ΙΔΙΟΚΤΗΣΙΑ'),H('ΕΙΔΟΣ ΧΩΡΟΥ'),H('ΚΩΔ.'),H('ΕΜΒΑΔΟΝ (m²)'),H('ΣΗΜΕΙΑ ΟΡΙΩΝ')],...rows,[L('ΣΥΝΟΛΟ',{colSpan:3,fillColor:'#f1f1f1'}),{},{},N(r2(c.tot.excl+c.tot.park+c.tot.roof),2,{bold:true,fillColor:'#f1f1f1'}),{text:'',fillColor:'#f1f1f1'}]]},layout:LAY,fontSize:7.5},sign()]);
+    const rows=exclOrdered(p).map(x=>{const h=holder(p,x.unit);return [L(h?h.code:'—'),(KINDS[x.kind]||KINDS.other).l,{text:x.code||'—',alignment:'center'},N(a2(x.area)),{text:x.boundary||'—',fontSize:6.5}];});
+    secs.push([...head('ΠΙΝΑΚΑΣ ΑΠΟΚΛΕΙΣΤΙΚΩΝ ΧΡΗΣΕΩΝ'),{table:{headerRows:1,dontBreakRows:true,widths:[80,110,40,60,'*'],body:[[H(p.buildings.length?'ΙΔΙΟΚΤΗΣΙΑ / ΚΤΙΡΙΟ':'ΙΔΙΟΚΤΗΣΙΑ'),H('ΕΙΔΟΣ ΧΩΡΟΥ'),H('ΚΩΔ.'),H('ΕΜΒΑΔΟΝ (m²)'),H('ΣΗΜΕΙΑ ΟΡΙΩΝ')],...rows,[L('ΣΥΝΟΛΟ',{colSpan:3,fillColor:'#f1f1f1'}),{},{},N(r2(c.tot.excl+c.tot.park+c.tot.roof),2,{bold:true,fillColor:'#f1f1f1'}),{text:'',fillColor:'#f1f1f1'}]]},layout:LAY,fontSize:7.5},sign()]);
   }
-  if(o.descr) secs.push([...head('ΠΕΡΙΓΡΑΦΗ ΙΔΙΟΚΤΗΣΙΩΝ'),...p.units.map(u=>({text:unitDescription(p,c,u),fontSize:9,alignment:'justify',lineHeight:1.25,margin:[0,0,0,7]})),sign()]);
+  if(o.descr) secs.push([...head('ΠΕΡΙΓΡΑΦΗ ΙΔΙΟΚΤΗΣΙΩΝ'),...descrList(p,c).map(x=>({text:x.text,fontSize:9,bold:!!x.bld,alignment:'justify',lineHeight:1.25,margin:[0,x.bld?6:0,0,7]})),sign()]);
   if(o.coords&&c.pts.size){ const arr=[...c.pts.values()], k=Math.ceil(arr.length/3);
     const t=j=>({width:'*',table:{headerRows:1,widths:[50,'*','*'],body:[[H('Σ.'),H('X'),H('Y')],...arr.slice(j*k,(j+1)*k).map(([x,y,n])=>[L(n),{text:x.toFixed(3),alignment:'right'},{text:y.toFixed(3),alignment:'right'}])]},layout:LAY,fontSize:7.5});
     secs.push([...head('ΠΙΝΑΚΑΣ ΣΥΝΤΕΤΑΓΜΕΝΩΝ ΣΗΜΕΙΩΝ (ΕΓΣΑ ’87)'),{columns:[t(0),t(1),t(2)],columnGap:10},sign()]); }
@@ -724,7 +821,8 @@ function applyInput(el){
   else if(coll==='cols'){ p.calc.cols[field]=el.checked; return 'hard'; }
   else if(coll==='out'){ p.out=p.out||{}; p.out[field]=el.checked; return 'hard'; }
   else if(coll==='p') p[field]=v;
-  else if(coll==='u'){ const u=p.units.find(u=>u.id===id); if(u) u[field]=v; if(field==='type') return 'hard'; }
+  else if(coll==='u'){ const u=p.units.find(u=>u.id===id); if(u) u[field]=v; if(field==='type'||field==='bld') return 'hard'; }
+  else if(coll==='b'){ const b=p.buildings.find(b=>b.id===id); if(b) b[field]=v; if(field==='code') return 'soft'; }
   else if(coll==='lv'){ const [uid_,ix]=id.split('|'); const u=p.units.find(u=>u.id===uid_); if(u&&u.levels[ix]) u.levels[ix][field]=v; if(field==='name') return 'hard'; }
   else if(coll==='x'){ const x=p.excl.find(x=>x.id===id); if(x) x[field]=v; }
   else if(coll==='g'){ const g=p.groups.find(g=>g.id===id); if(g) g[field]=v; }
@@ -759,7 +857,20 @@ document.addEventListener('click',ev=>{
     case 'history': showHistory(); break;
     case 'trash': showTrash(); break;
     case 'logout': (async()=>{ if(S.dirty) await saveNow(); if(pendingIds().length){ toast('Υπάρχουν αλλαγές που δεν έχουν σταλεί ακόμη. Περίμενε σύνδεση πριν αποσυνδεθείς.'); return; } await store.auth.signOut(); })(); break;
-    case 'u-add': { const u=mkUnit(uid(),'ΙΔΙΟΚΤΗΣΙΑ '+(p.units.length+1)); const prev=p.units[p.units.length-1]; if(prev){ const m=String(prev.code).match(/^(.*?)(\d+)\s*$/); if(m) u.code=m[1]+(Number(m[2])+1); u.type=prev.type; } p.units.push(u); re(); setTimeout(()=>{const el=$('#u-'+u.id+'-code'); el&&el.focus(); el&&el.select();},30); break; }
+    case 'u-add': { const bid=b.dataset.bld||''; const sib=bid?p.units.filter(x=>x.bld===bid):p.units; const prev=sib[sib.length-1]||p.units[p.units.length-1];
+      const u=mkUnit(uid(),'ΙΔΙΟΚΤΗΣΙΑ '+(p.units.length+1)); if(prev){ const m=String(prev.code).match(/^(.*?)(\d+)\s*$/); if(m) u.code=m[1]+(Number(m[2])+1); u.type=prev.type; }
+      u.bld=bid||(prev&&!b.dataset.bld?prev.bld||'':'');
+      const at=prev?p.units.indexOf(prev)+1:p.units.length; p.units.splice(at,0,u); re(); setTimeout(()=>{const el=$('#u-'+u.id+'-code'); el&&el.focus(); el&&el.select();},30); break; }
+    case 'b-add': { const L='ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ'; let n=p.buildings.length, code; do{ code='ΚΤΙΡΙΟ '+(L[n]||(n+1)); n++; }while(p.buildings.some(x=>UP(x.code)===UP(code)));
+      const nb=mkBuilding(code); const first=!p.buildings.length; p.buildings.push(nb);
+      if(first) p.units.forEach(u=>{ if(!u.bld) u.bld=nb.id; });
+      re(); toast(first?`Προστέθηκε το ${code}. Όλες οι υπάρχουσες ιδιοκτησίες μπήκαν σε αυτό· άλλαξε κτίριο από τα «Στοιχεία» κάθε ιδιοκτησίας.`:`Προστέθηκε το ${code}`); break; }
+    case 'b-del': { if(b.dataset.armed!=='1'){ b.dataset.armed='1'; b.textContent='Διαγραφή;'; b.classList.add('danger'); setTimeout(()=>{ if(b.isConnected){b.dataset.armed='';b.textContent='✕';b.classList.remove('danger');}},3000); return; }
+      const ref=BLD_PREFIX+id; p.buildings=p.buildings.filter(x=>x.id!==id); p.units.forEach(u=>{ if(u.bld===id) u.bld=''; }); p.excl.forEach(x=>{ if(x.unit===ref) x.unit=''; });
+      p.groups.forEach(g=>{ if(g.bld===id){ g.bld=null; g.units=[]; } }); re(); toast('Το κτίριο διαγράφηκε· οι ιδιοκτησίες του έμειναν χωρίς κτίριο'); break; }
+    case 'b-group': { const bb=p.buildings.find(x=>x.id===id); p.groups.push({id:uid(),name:'Κοινόχρηστοι χώροι '+(bb?bb.code:''),bld:id,all:false,units:[],mode:'pm',manual:{},items:[{id:uid(),name:'',zone:'Κτίριο',col:'',area:null,boundary:''}]}); scheduleSave(); goTab('common'); renderAll(); window.scrollTo({top:document.body.scrollHeight}); break; }
+    case 'g-unbind': { const g=p.groups.find(x=>x.id===id); if(g){ g.units=GU(p,g); g.bld=null; } re(); break; }
+    case 'set-kathoriz': p.info.regime='kathoriz'; re(); break;
     case 'u-del': { if(b.dataset.armed!=='1'){ b.dataset.armed='1'; b.textContent='Διαγραφή;'; b.classList.add('danger'); setTimeout(()=>{ if(b.isConnected){b.dataset.armed='';b.textContent='✕';b.classList.remove('danger');}},3000); return; }
       p.units=p.units.filter(u=>u.id!==id); p.excl.forEach(x=>{ if(x.unit===id) x.unit=''; }); p.groups.forEach(g=>g.units=g.units.filter(x=>x!==id)); re(); break; }
     case 'u-up': { const i=p.units.findIndex(u=>u.id===id); if(i>0){ [p.units[i-1],p.units[i]]=[p.units[i],p.units[i-1]]; re(); } break; }
@@ -775,7 +886,7 @@ document.addEventListener('click',ev=>{
     case 'ci-del': { const g=p.groups.find(g=>g.id===id); g.items=g.items.filter(i=>i.id!==b.dataset.ix); re(); break; }
     case 'dl-xlsx': dlXLSX(b); break;
     case 'dl-pdf': dlPDF(b); break;
-    case 'copy-descr': copyText(p.units.map(u=>unitDescription(p,S.c,u)).join('\n\n')); break;
+    case 'copy-descr': copyText(descrList(p,S.c).map(x=>x.text).join('\n\n')); break;
   }
 });
 function normProject(o){ o.id=newPid(); delete o.sample; o.excl=o.excl||[]; o.groups=o.groups||[]; o.calc=Object.assign(blankProject().calc,o.calc||{}); return o; }

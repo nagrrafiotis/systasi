@@ -20,3 +20,6 @@
 .doc .stamp b{font-size:10px;display:block;text-transform:uppercase}
 .doc .note{font-size:8.5px;color:#444;margin-top:6px}
 @media print{ .doc{box-shadow:none;width:auto;padding:0;margin:0} .doc + .doc{page-break-before:always;margin-top:0} }
+.doc tr.bld td{background:#f7f7f7;font-weight:700}
+.doc td.lbl.ind{padding-left:14px}
+.doc .descr p.bld{font-weight:700;margin-top:14px}

@@ -54,3 +54,44 @@ describe('τυχαία έργα (5.000)', () => {
     const c = compute(p); expect(p.units.map(u => c.u[u.id].pm)).toEqual([333.34, 333.33, 333.33]);
   });
 });
+
+describe('κτίρια — κάθετη και οριζόντια ιδιοκτησία (δύο επίπεδα)', async () => {
+  const { mkBuilding } = await import('../src/core.js');
+  it('παράδειγμα: Α 446,40‰ · Α1 544,16‰ επί του Α → 242,91‰ επί του οικοπέδου', () => {
+    const p = blankProject(); p.info.plotArea = 1369; p.info.regime = 'kathoriz'; p.calc.bldMode = 'manual';
+    const A = mkBuilding('ΚΤΙΡΙΟ Α'), B = mkBuilding('ΚΤΙΡΙΟ Β'); A.pmManual = 446.4; B.pmManual = 553.6; p.buildings = [A, B]; p.units = [];
+    [['Α1', 95.5, A], ['Α2', 80, A], ['Β1', 120, B], ['Β2', 60, B], ['Β3', 60, B]].forEach(([n, a, b]) => { const u = mkUnit(null, n); u.main = a; u.bld = b.id; p.units.push(u); });
+    const c = compute(p);
+    expect(c.u[p.units[0].id].pmB).toBe(544.16); expect(c.u[p.units[0].id].pm).toBe(242.91);
+    expect(c.b[A.id].plot + c.b[B.id].plot).toBeCloseTo(1369, 9);
+    expect(c.checks.filter(x => x.sev === 'err')).toEqual([]);
+  });
+  it('παλιά έργα: το πεδίο «κτίριο» γίνεται κτίριο', () => {
+    const p = blankProject(); delete p.buildings; const u = p.units[0]; delete u.bld; u.building = 'Κτίριο Γ'; u.main = 50; p.info.plotArea = 500;
+    compute(p); expect(p.buildings.map(b => b.code)).toEqual(['Κτίριο Γ']); expect(u.bld).toBe(p.buildings[0].id);
+  });
+  it('3.000 τυχαία συγκροτήματα: όλα κλείνουν σε κάθε επίπεδο', () => {
+    for (let t = 0; t < 3000; t++) {
+      const p = blankProject(); p.info.regime = 'kathoriz'; p.units = []; p.buildings = []; p.excl = [];
+      p.calc.dec = [0, 1, 2, 3][t % 4]; p.calc.bldMode = ['auto', 'land', 'manual'][t % 3]; p.info.plotArea = R(400, 30000);
+      const nb = 1 + Math.floor(rnd() * 5); let left = 1000;
+      for (let k = 0; k < nb; k++) { const b = mkBuilding('Κ' + k); p.buildings.push(b);
+        const ff = 10 ** p.calc.dec; const share = k === nb - 1 ? left : Math.round(left / (nb - k) * (0.6 + rnd() * 0.8) * ff) / ff; left = Math.round((left - share) * ff) / ff; b.pmManual = share;
+        p.excl.push({ id: 'b' + k, unit: 'b:' + b.id, kind: 'garden', area: R(p.info.plotArea / (nb * 6), p.info.plotArea / (nb * 2)), boundary: '' });
+        const nu = 1 + Math.floor(rnd() * 6);
+        for (let i = 0; i < nu; i++) { const u = mkUnit(null, 'Κ' + k + '.' + i); u.main = R(25, 220); if (rnd() < .4) u.semi = R(2, 30); u.bld = b.id; p.units.push(u); } }
+      if (rnd() < .3) p.calc.coef = { main: 1, semi: R(0, 1), base: 0, pool: 0, tanks: 0, excl: 0, park: 0 };
+      const c = compute(p), d = p.calc.dec, f = 10 ** d, I = v => Math.round(v * f);
+      expect(c.checks.filter(x => x.sev === 'err').map(x => x.msg)).toEqual([]);
+      expect(p.buildings.reduce((a, b) => a + I(c.b[b.id].pm), 0)).toBe(1000 * f);
+      expect(p.units.reduce((a, u) => a + I(c.u[u.id].pm), 0)).toBe(1000 * f);
+      expect(p.buildings.reduce((a, b) => a + cents(c.b[b.id].plot), 0)).toBe(cents(p.info.plotArea));
+      p.buildings.forEach(b => { const B = c.b[b.id], us = p.units.filter(u => u.bld === b.id);
+        expect(us.reduce((a, u) => a + I(c.u[u.id].pmB), 0)).toBe(1000 * f);
+        expect(us.reduce((a, u) => a + I(c.u[u.id].pm), 0)).toBe(I(B.pm));
+        expect(us.reduce((a, u) => a + cents(c.u[u.id].plot), 0)).toBe(cents(B.plot));
+        us.forEach(u => expect(Math.abs(c.u[u.id].pm - B.pm * c.u[u.id].pmB / 1000)).toBeLessThanOrEqual(1 / f + 1e-9)); });
+      expect(p.units.reduce((a, u) => a + cents(c.u[u.id].plot), 0)).toBe(cents(p.info.plotArea));
+    }
+  });
+});

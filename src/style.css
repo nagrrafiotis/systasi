@@ -169,3 +169,7 @@ body.locked{overflow:hidden}
 .dlg-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line)}
 .dlg-head h2{font-size:17px}
 .dlg-body{padding:14px 16px;display:flex;flex-direction:column;gap:12px;overflow:auto;max-height:calc(min(80vh,720px) - 60px)}
+/* κτίρια */
+table.dt tr.bhead td{background:var(--accent-soft);border-bottom-color:var(--line)}
+table.dt tr.bhead.warnrow td{background:var(--warn-soft)}
+table.dt tr.in-b > td:first-child{padding-left:22px}
