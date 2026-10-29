@@ -431,7 +431,7 @@ function balancePanel(){
    <div class="sect" style="gap:10px">
      <label class="f"><span>Κάλυψη κτιρίων (m²) — από το τοπογραφικό</span><input type="text" inputmode="decimal" class="num" id="b-coverage" data-coll="info" data-field="coverage" data-num="1" value="${esc(fin(p.info.coverage))}" placeholder="για να κλείσει το ισοζύγιο"></label>
      <label class="chk"><input type="checkbox" data-coll="calcb" data-field="exclInclPool" ${B.inc?'checked':''}> Οι πισίνες περιλαμβάνονται στα εμβαδά αποκλειστικών χρήσεων</label>
-     <p class="hint">Θέσεις στην πυλωτή${B.pil?' ('+fmt(B.pil)+' m²)':''} και δώματα δεν αφαιρούνται, γιατί βρίσκονται μέσα στην κάλυψη. Όλα τα εμβαδά υπολογίζονται με 2 δεκαδικά, όπως τυπώνονται.</p>
+     <p class="hint">Θέσεις στην πυλωτή${B.pil?' ('+fmt(B.pil)+' m²)':''}, δώματα${B.roofPools?' και πισίνες ορόφων ('+fmt(B.roofPools)+' m²)':''} δεν αφαιρούνται, γιατί βρίσκονται μέσα στην κάλυψη. Όλα τα εμβαδά υπολογίζονται με 2 δεκαδικά, όπως τυπώνονται.</p>
    </div></div></div>`;
 }
 function unitOpts(){ return [['','— επίλεξε —'],...S.p.units.map(u=>[u.id,u.code||'(χωρίς όνομα)'])]; }

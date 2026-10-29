@@ -197,3 +197,15 @@ describe('σενάριο: δύο κτίρια διαφορετικού μεγέ�
     expect(c.checks.filter(x => x.sev === 'err')).toEqual([]);
   });
 });
+
+describe('πισίνα σε όροφο', async () => {
+  const m = await import('../src/core.js');
+  it('η πισίνα του δώματος δεν αφαιρείται από το ισοζύγιο οικοπέδου· η πισίνα ισογείου αφαιρείται', () => {
+    const p = m.blankProject(); p.info.plotArea = 500; p.info.coverage = 100;
+    const a = m.mkUnit(null, 'Α'); Object.assign(a, { floor: 0, main: 100, pool: 30 });
+    const b = m.mkUnit(null, 'Β'); Object.assign(b, { floor: 5, main: 100, pool: 20 });
+    p.units = [a, b]; p.groups = [{ id: 'g', name: 'Γ', all: true, units: [], mode: 'pm', manual: {}, items: [{ id: 'i', name: 'Ακάλυπτος', zone: 'Υπαίθριος', area: 370 }] }];
+    const c = m.compute(p);
+    expect(c.bal.pools).toBe(30); expect(c.bal.roofPools).toBe(20); expect(c.bal.diff).toBe(0);
+  });
+});

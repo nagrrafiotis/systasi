@@ -294,8 +294,10 @@ function compute(p){
     c.grp[g.id]=G;
   });
   c.plotBoundary=ringsArea(p.info.plotBoundary,c.pts);
-  { const inc=!!p.calc.exclInclPool, pools=inc?0:c.tot.pool; const used=r2(c.tot.excl+c.tot.parkOut+c.commonOut+pools); const cov=a2(p.info.coverage);
-    c.bal={plot,excl:c.tot.excl,park:c.tot.parkOut,pil:r2(c.tot.park-c.tot.parkOut),common:c.commonOut,pools,inc,used,rest:plot==null?null:r2(plot-used),cov,diff:(plot==null||cov==null)?null:r2(plot-used-cov)}; }
+  // πισίνες ιδιοκτησιών σε όροφο (π.χ. στο δώμα) βρίσκονται πάνω από την κάλυψη: δεν αφαιρούνται από τη γη
+  { const inc=!!p.calc.exclInclPool, upper=u=>Number(u.floor||0)>=1;
+    const roofPools=r2(p.units.filter(upper).reduce((a,u)=>a+nz(c.u[u.id].pool),0)), pools=inc?0:r2(c.tot.pool-roofPools); const used=r2(c.tot.excl+c.tot.parkOut+c.commonOut+pools); const cov=a2(p.info.coverage);
+    c.bal={plot,excl:c.tot.excl,park:c.tot.parkOut,pil:r2(c.tot.park-c.tot.parkOut),common:c.commonOut,pools,roofPools,inc,used,rest:plot==null?null:r2(plot-used),cov,diff:(plot==null||cov==null)?null:r2(plot-used-cov)}; }
   c.checks=runChecks(p,c);
   return c;
 }
