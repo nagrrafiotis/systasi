@@ -14,6 +14,30 @@ const KINDS={
   roof:{l:'Δώμα / ταράτσα',col:'roof',txt:'τμήματος του δώματος'},
   other:{l:'Άλλος υπαίθριος χώρος',col:'excl',txt:'υπαίθριου χώρου'}};
 const UNIT_TYPES=['Κατοικία','Διαμέρισμα','Μεζονέτα','Κατάστημα','Γραφείο','Αποθήκη','Κλειστή θέση στάθμευσης','Ανοιχτή θέση στάθμευσης'];
+/** Στάθμες κτιρίου: -1 υπόγειο, 0 ισόγειο, 1.. όροφοι. */
+const FLOORS=[[-2,'Β΄ υπόγειο'],[-1,'Υπόγειο'],[0,'Ισόγειο'],[1,'1ος όροφος'],[2,'2ος όροφος'],[3,'3ος όροφος'],[4,'4ος όροφος'],[5,'5ος όροφος'],[6,'6ος όροφος'],[7,'7ος όροφος'],[8,'8ος όροφος']];
+const floorName=f=>(FLOORS.find(x=>x[0]===Number(f))||[0,String(f)])[1];
+const ov=(o,f)=>{ const v=o&&o[String(f)]; const n=num(v); return n==null?null:n; };
+/** Συντελεστής αξίας: υπόγειο 0,50 · ισόγειο 1,00 · +βήμα ανά όροφο (προεπιλογή 5%). */
+function valueCoef(p,f){ f=Number(f||0); const o=ov(p.calc.floorCoef,f); if(o!=null) return o; const st=num(p.calc.valueStep)??0.05; return f<0?0.5:1+st*f; }
+/** Συντελεστής ανελκυστήρα: υπόγειο 0,50 · ισόγειο 0 · α' όροφος 1,00 · +βήμα ανά όροφο (προεπιλογή 10%). */
+function elevCoef(p,f){ f=Number(f||0); const o=ov(p.calc.elevCoef,f); if(o!=null) return o; const st=num(p.calc.elevStep)??0.10; return f<0?0.5:f===0?0:1+st*(f-1); }
+/** Συντελεστής θέρμανσης: ενδεικτικά 1,00 — αντικαθίσταται από τη μελέτη του μηχανολόγου. */
+function heatCoef(p,f){ const o=ov(p.calc.heatCoef,Number(f||0)); return o!=null?o:1; }
+function levelFloor(u,name){ const uf=Number(u.floor||0);
+  const m={'Υπόγειο':-1,'Ισόγειο':0,"Α' όροφος":1,"Β' όροφος":2,"Γ' όροφος":3,"Δ' όροφος":4}; if(name in m) return m[name];
+  if(name==='Όροφος') return uf>=1?uf:1; if(name==='Σοφίτα'){ const fs=(u.levels||[]).map(l=>l.name).filter(n=>n!=='Σοφίτα'&&n!=='Πατάρι').map(n=>levelFloor(u,n)); return fs.length?Math.max(...fs)+1:uf+1; }
+  return uf; }
+function heightOf(p,u){ const h=num(u.height); return h!=null?h:(num(p.calc.defHeight)??3); }
+/** Κατανομή με κλειδωμένες τιμές: όσες έχουν τιμή την κρατούν, οι υπόλοιπες μοιράζονται το υπόλοιπο αναλογικά με το βάρος τους. */
+function distribute(weights,fixed,total,dec){
+  const f=10**dec, fx=fixed.map(v=>v==null?null:Math.round(v*f)/f);
+  const rest=Math.round((total-fx.reduce((a,v)=>a+nz(v),0))*f)/f;
+  const idx=weights.map((w,i)=>fx[i]==null?i:-1).filter(i=>i>=0);
+  const W=idx.reduce((a,i)=>a+nz(weights[i]),0); const out=fx.slice();
+  if(idx.length){ if(W>0&&rest>=0){ const sh=apportion(idx.map(i=>nz(weights[i])/W*rest),rest,dec); idx.forEach((i,k)=>out[i]=sh[k]); } else idx.forEach(i=>out[i]=null); }
+  return out;
+}
 const LEVELS=[['Υπόγειο','ΥΠ.'],['Ισόγειο','ΙΣ.'],['Όροφος','ΟΡ.'],["Α' όροφος","Α' ΟΡ."],["Β' όροφος","Β' ΟΡ."],["Γ' όροφος","Γ' ΟΡ."],["Δ' όροφος","Δ' ΟΡ."],['Σοφίτα','ΣΟΦ.'],['Πατάρι','ΠΑΤ.']];
 const ZONES=['Υπαίθριος','Ισόγειο','Υπόγειο','Κτίριο','Δώμα'];
 const REGIMES={oriz:'Οριζόντια ιδιοκτησία',kath:'Κάθετη ιδιοκτησία',kathoriz:'Κάθετη και οριζόντια ιδιοκτησία'};
@@ -100,17 +124,19 @@ const twoLevel=p=>p.info.regime==='kathoriz'&&(p.buildings||[]).length>0;
 /** Συμπληρώνει πεδία που λείπουν σε έργα παλαιότερων εκδόσεων. Δεν αλλάζει αριθμούς. */
 function upgrade(p){
   p.buildings=p.buildings||[]; p.excl=p.excl||[]; p.groups=p.groups||[];
-  p.calc=Object.assign({mode:'auto',bldMode:'auto',dec:2},p.calc||{});
+  p.calc=Object.assign({mode:'auto',bldMode:'auto',dec:2,basis:'area',defHeight:3,valueMode:'none',valueStep:0.05,elevStep:0.10,floorCoef:{},elevCoef:{},heatCoef:{},votes:false},p.calc||{});
+  p.info.notes=p.info.notes??'';
   p.calc.coef=Object.assign({main:1,semi:0,base:0,pool:0,tanks:0,excl:0,park:0},p.calc.coef||{});
   p.calc.cols=Object.assign({main:true,semi:true,base:true,pool:true,tanks:true},p.calc.cols||{});
   (p.units||[]).forEach(u=>{
     if(u.bld===undefined){ u.bld=''; const t=String(u.building||'').trim();
       if(t){ let b=p.buildings.find(b=>UP(b.code).trim()===UP(t)); if(!b){ b=mkBuilding(t); p.buildings.push(b); } u.bld=b.id; } }
     if(u.bld&&!p.buildings.some(b=>b.id===u.bld)) u.bld='';
+    if(u.floor===undefined) u.floor=0;
   });
   return p;
 }
-function mkUnit(id,code){return {id:id||uid(),code:code||'',type:'Κατοικία',bld:'',levels:[],main:null,semi:null,base:null,pool:null,tanks:null,pmManual:null,adj:1,descr:''};}
+function mkUnit(id,code){return {id:id||uid(),code:code||'',type:'Κατοικία',bld:'',floor:0,height:null,pmFixed:null,levels:[],main:null,semi:null,base:null,pool:null,tanks:null,pmManual:null,adj:1,descr:''};}
 function sampleProject(){
   const U=[
     ['ΚΑΤΟΙΚΙΑ 1',[['Ισόγειο',103.35],['Όροφος',63.10]],null,22.96,72.75,37,null],
@@ -164,15 +190,21 @@ function compute(p){
     if(t){ t[k.col]=r2(t[k.col]+a); t[k.col+'List'].push(x); if(x.kind!=='pilotis'&&k.col==='park') t.parkOut=r2(t.parkOut+a); }
     c.xcalc[x.id]=ringsArea(x.boundary,c.pts); });
   p.units.forEach(u=>{ if(u.bld&&c.b[u.bld]) c.b[u.bld].units.push(u.id); });
-  // βάρος ιδιοκτησίας = συντελεστής θέσης × Σ(εμβαδόν × συντελεστής στήλης)
-  const co=p.calc.coef||{};
-  const w=p.units.map(u=>{const r=c.u[u.id];return nz(num(u.adj)??1)*(nz(co.main)*nz(r.main)+nz(co.semi)*nz(r.semi)+nz(co.base)*nz(r.base)+nz(co.pool)*nz(r.pool)+nz(co.tanks)*nz(r.tanks)+nz(co.excl)*nz(r.excl)+nz(co.park)*nz(r.park));});
+  // βάρος ιδιοκτησίας = συντελεστής θέσης × [ύψος] × Σ(εμβαδόν × συντελεστής στήλης × συντελεστής αξίας στάθμης)
+  // Συντελεστής αξίας: κύριοι/ημιυπαίθριοι κατά τη στάθμη (ή ανά επίπεδο), υπόγειοι χώροι και δεξαμενές ως υπόγειο, υπαίθριοι ως ισόγειο.
+  const co=p.calc.coef||{}, vm=p.calc.valueMode==='floor', vol=p.calc.basis==='volume';
+  const w=p.units.map(u=>{ const r=c.u[u.id], vc=f=>vm?valueCoef(p,f):1, uf=u.floor||0;
+    const mainT=(vm&&u.levels&&u.levels.length)?u.levels.reduce((a,l)=>a+nz(a2(l.area))*vc(levelFloor(u,l.name)),0):nz(r.main)*vc(uf);
+    const H=vol?heightOf(p,u):1;
+    r.height=heightOf(p,u); r.vol=r2(nz(r.main)*r.height); r.vcoef=vm?vc(uf):null; r.floor=uf;
+    return nz(num(u.adj)??1)*H*(nz(co.main)*mainT+nz(co.semi)*nz(r.semi)*vc(uf)+(nz(co.base)*nz(r.base)+nz(co.tanks)*nz(r.tanks))*vc(-1)+(nz(co.pool)*nz(r.pool)+nz(co.excl)*nz(r.excl)+nz(co.park)*nz(r.park))*vc(0)); });
   p.units.forEach((u,i)=>c.u[u.id].w=w[i]);
+  const fixedOf=u=>p.calc.mode==='auto'?num(u.pmFixed):null;
   const rnd=v=>v==null?null:Math.round(v*f)/f;
   let pm;
   if(!c.two){
     const W=w.reduce((a,b)=>a+b,0);
-    if(p.calc.mode==='auto') pm = W>0? apportion(w.map(v=>v/W*1000),1000,dec) : p.units.map(()=>null);
+    if(p.calc.mode==='auto') pm = distribute(w,p.units.map(fixedOf),1000,dec);
     else pm=p.units.map(u=>rnd(num(u.pmManual)));
   } else {
     // 1ο επίπεδο: ‰ κάθε κτιρίου (κάθετης ιδιοκτησίας) επί του οικοπέδου
@@ -183,15 +215,15 @@ function compute(p){
     const mode=p.calc.bldMode||'auto';
     let bpm;
     if(mode==='manual') bpm=keys.map(k=>k?rnd(num(p.buildings.find(b=>b.id===k).pmManual)):null);
-    else { const base=keys.map(k=>mode==='land'?c.b[k].land:c.b[k].w); const T=base.reduce((a,b)=>a+b,0);
-      bpm=T>0?apportion(base.map(v=>v/T*1000),1000,dec):keys.map(()=>null); }
+    else { const base=keys.map(k=>mode==='land'?c.b[k].land:c.b[k].w);
+      bpm=distribute(base,keys.map(k=>{ const b=k&&p.buildings.find(b=>b.id===k); return b?num(b.pmFixed):null; }),1000,dec); }
     keys.forEach((k,i)=>c.b[k].pm=bpm[i]);
     // 2ο επίπεδο: ‰ ιδιοκτησίας επί του κτιρίου, και από αυτό επί του οικοπέδου
     pm=p.units.map(()=>null); const ix=Object.fromEntries(p.units.map((u,i)=>[u.id,i]));
     keys.forEach(k=>{ const B=c.b[k], ids=B.units; if(!ids.length) return;
       let inB;
       if(p.calc.mode==='manual') inB=ids.map(id=>rnd(num(p.units[ix[id]].pmManual)));
-      else { const W=ids.reduce((a,id)=>a+c.u[id].w,0); inB=W>0?apportion(ids.map(id=>c.u[id].w/W*1000),1000,dec):ids.map(()=>null); }
+      else inB=distribute(ids.map(id=>c.u[id].w),ids.map(id=>fixedOf(p.units[ix[id]])),1000,dec);
       B.inSum=Math.round(inB.reduce((a,v)=>a+nz(v),0)*1e6)/1e6;
       ids.forEach((id,j)=>c.u[id].pmB=inB[j]);
       if(B.pm==null||inB.some(v=>v==null)) return;
@@ -203,6 +235,8 @@ function compute(p){
   }
   p.units.forEach((u,i)=>{c.u[u.id].pm=pm[i];});
   c.pmSum=Math.round(pm.reduce((a,b)=>a+nz(b),0)*1e6)/1e6;
+  // ψήφοι: ακέραια ‰ που κλείνουν ακριβώς στα 1000
+  if(Math.abs(c.pmSum-1000)<1e-6){ const vv=apportion(pm.map(v=>nz(v)),1000,0); p.units.forEach((u,i)=>c.u[u.id].votes=vv[i]); }
   // αναλογία γης σε m²: πρώτα ανά κτίριο, μετά ανά ιδιοκτησία μέσα στο κτίριο, ώστε όλα να κλείνουν
   if(plot){
     const allOk=Math.abs(c.pmSum-1000)<1e-6;
@@ -221,11 +255,11 @@ function compute(p){
     }
   }
   // κτίρια σε απλή σύσταση: ομαδοποίηση με υποσύνολα
-  Object.values(c.b).forEach(B=>{ ['main','semi','base','pool','tanks'].forEach(k=>B['u_'+k]=r2(B.units.reduce((a,id)=>a+nz(c.u[id][k]),0)));
+  Object.values(c.b).forEach(B=>{ ['main','semi','base','pool','tanks','vol'].forEach(k=>B['u_'+k]=r2(B.units.reduce((a,id)=>a+nz(c.u[id][k]),0)));
     B.u_excl=r2(B.units.reduce((a,id)=>a+nz(c.u[id].excl),0)); B.u_park=r2(B.units.reduce((a,id)=>a+nz(c.u[id].park),0));
     if(!c.two){ B.pm=B.units.length?Math.round(B.units.reduce((a,id)=>a+nz(c.u[id].pm),0)*f)/f:null; B.plot=B.units.length?r2(B.units.reduce((a,id)=>a+nz(c.u[id].plot),0)):null; } });
   // totals
-  ['main','semi','base','pool','tanks','excl','park','parkOut','roof','plot'].forEach(k=>c.tot[k]=r2(p.units.reduce((a,u)=>a+nz(c.u[u.id][k]),0)));
+  ['main','semi','base','pool','tanks','vol','excl','park','parkOut','roof','plot'].forEach(k=>c.tot[k]=r2(p.units.reduce((a,u)=>a+nz(c.u[u.id][k]),0)));
   const bl=Object.values(c.b); ['excl','park','parkOut','roof'].forEach(k=>{ c.tot['u_'+k]=c.tot[k]; c.tot[k]=r2(c.tot[k]+bl.reduce((a,B)=>a+nz(B[k]),0)); });
   // common groups
   c.commonCol={main:0,semi:0,base:0,pool:0,tanks:0}; c.commonOut=0; c.commonAll=0;
@@ -237,8 +271,9 @@ function compute(p){
       c.ccalc[it.id]=ringsArea(it.boundary,c.pts);});
     const us=GU(p,g);
     let vals;
-    if(g.mode==='equal') vals=us.length?apportion(us.map(()=>1000/us.length),1000,dec):[];
-    else if(g.mode==='pm'){ const s=us.reduce((a,id)=>a+nz(c.u[id].pm),0); vals=s>0?apportion(us.map(id=>nz(c.u[id].pm)/s*1000),1000,dec):us.map(()=>null);}
+    const uo=id=>p.units.find(u=>u.id===id), cu=id=>c.u[id];
+    const gw={equal:()=>1,pm:id=>nz(cu(id).pm),volume:id=>nz(cu(id).vol),elevator:id=>elevCoef(p,uo(id).floor)*nz(cu(id).vol),heating:id=>heatCoef(p,uo(id).floor)*nz(cu(id).vol)}[g.mode];
+    if(gw) vals=us.length?distribute(us.map(gw),us.map(id=>num((g.fixed||{})[id])),1000,dec):[];
     else vals=us.map(id=>num((g.manual||{})[id]));
     us.forEach((id,i)=>G.alloc[id]=vals[i]);
     G.allocSum=Math.round(vals.reduce((a,b)=>a+nz(b),0)*1000)/1000;
@@ -256,6 +291,15 @@ function runChecks(p,c){
   if(!plot) add('err',`Δεν έχει δοθεί εμβαδόν ${G[2]}.`,'Χωρίς αυτό δεν υπολογίζεται η αναλογία ανά ιδιοκτησία.','info');
   if(!p.units.length) add('err','Δεν υπάρχουν ιδιοκτησίες.','', 'units');
   if(Math.abs(c.pmSum-1000)>1e-6) add('err',`Το άθροισμα των χιλιοστών είναι ${fmt(c.pmSum,p.calc.dec)}‰ αντί 1000‰.`,p.calc.mode==='manual'?'Διόρθωσε τα χειροκίνητα ποσοστά ή άλλαξε σε αυτόματο υπολογισμό.':'Έλεγξε ότι υπάρχουν εμβαδά στις στήλες με συντελεστή.','units');
+  if(p.calc.mode==='auto'){
+    const fx=p.units.filter(u=>num(u.pmFixed)!=null);
+    const groupsF=c.two?Object.values(c.b).map(B=>B.units.map(id=>p.units.find(u=>u.id===id))):[p.units];
+    groupsF.forEach(us=>{ const s=us.reduce((a,u)=>a+nz(num(u.pmFixed)),0); const free=us.filter(u=>num(u.pmFixed)==null);
+      if(s>1000+1e-9) add('err',`Τα κλειδωμένα ποσοστά ${c.two?'μέσα σε κτίριο ':''}αθροίζουν ${fmt(s,p.calc.dec)}‰, πάνω από 1000‰.`,'Μείωσε ή ξεκλείδωσε κάποιο ποσοστό.','units');
+      else if(us.length&&!free.length&&Math.abs(s-1000)>1e-6) add('err',`Όλα τα ποσοστά ${c.two?'του κτιρίου ':''}είναι κλειδωμένα αλλά αθροίζουν ${fmt(s,p.calc.dec)}‰ αντί 1000‰.`,'Ξεκλείδωσε μία ιδιοκτησία για να πάρει το υπόλοιπο.','units'); });
+    if(fx.length) add('info',`${fx.length===1?'Μία ιδιοκτησία έχει':fx.length+' ιδιοκτησίες έχουν'} κλειδωμένο ποσοστό: ${fx.map(u=>u.code).join(', ')}.`,'Οι υπόλοιπες μοιράζονται αναλογικά το υπόλοιπο ως τα 1000‰.','units');
+  }
+  if(p.calc.basis==='volume'){ const nh=p.units.filter(u=>num(u.height)==null); if(nh.length) add('info',`Υπολογισμός κατά όγκο: ${nh.length} ιδιοκτησίες χωρίς ύψος παίρνουν το προεπιλεγμένο ${fmt(num(p.calc.defHeight)??3)} m.`,nh.map(u=>u.code).join(', '),'units'); }
   const codes={};
   p.units.forEach(u=>{ const cu=c.u[u.id];
     if(!String(u.code).trim()) add('warn','Ιδιοκτησία χωρίς ονομασία.','Δώσε κωδικό, π.χ. «ΚΑΤΟΙΚΙΑ 3» ή «ΔΙΑΜΕΡΙΣΜΑ Α1».','units');
@@ -290,7 +334,7 @@ function runChecks(p,c){
   });
   p.groups.forEach(g=>{ const C=c.grp[g.id];
     if(!GU(p,g).length) add('warn',`Η ομάδα «${g.name}» δεν έχει συμμετέχουσες ιδιοκτησίες.`,'','common');
-    else if(Math.abs(C.allocSum-1000)>1e-6) add('err',`Η κατανομή δαπανών «${g.name}» αθροίζει ${fmt(C.allocSum,p.calc.dec)}‰ αντί 1000‰.`,'','common');
+    else if(Math.abs(C.allocSum-1000)>1e-6) add('err',`Η κατανομή δαπανών «${g.name}» αθροίζει ${fmt(C.allocSum,p.calc.dec)}‰ αντί 1000‰.`,C.allocSum===0&&g.mode==='elevator'?'Όλες οι ιδιοκτησίες έχουν συντελεστή ανελκυστήρα 0 (π.χ. είναι όλες στο ισόγειο). Όρισε τη στάθμη κάθε ιδιοκτησίας ή άλλαξε τους συντελεστές στα «Στοιχεία έργου».':C.allocSum===0&&['volume','heating'].includes(g.mode)?'Οι ιδιοκτησίες δεν έχουν κύριους χώρους για να υπολογιστεί όγκος.':'','common');
     g.items.forEach(it=>{const ca=c.ccalc[it.id]; if(ca!=null&&num(it.area)!=null&&Math.abs(ca-num(it.area))>0.05) add('warn',`Εμβαδόν «${it.name}»: δηλωμένο ${fmt(num(it.area))} m², από συντεταγμένες ${fmt(ca)} m².`,'','common');});
   });
   if(c.plotBoundary!=null&&plot&&Math.abs(c.plotBoundary-plot)>0.05) add('warn',`Το εμβαδόν ${G[2]} από τις συντεταγμένες είναι ${fmt(c.plotBoundary)} m² αντί ${fmt(plot)} m².`,'','coords');
@@ -305,4 +349,4 @@ function runChecks(p,c){
   return L;
 }
 
-export { holder, twoLevel, upgrade, mkBuilding, BLD_PREFIX, AREA_COLS, KINDS, UNIT_TYPES, LEVELS, ZONES, REGIMES, PLOT_TYPES, AREAS_ZONE, TABS, DEFAULT_ENG, $, $$, esc, clone, num, nz, r2, fmt, a2, fin, UP, apportion, normPt, parseRings, parsePoints, ringsArea, ringOpen, blankProject, GU, mkUnit, sampleProject, unitMain, compute, runChecks };
+export { FLOORS, floorName, valueCoef, elevCoef, heatCoef, levelFloor, heightOf, distribute, holder, twoLevel, upgrade, mkBuilding, BLD_PREFIX, AREA_COLS, KINDS, UNIT_TYPES, LEVELS, ZONES, REGIMES, PLOT_TYPES, AREAS_ZONE, TABS, DEFAULT_ENG, $, $$, esc, clone, num, nz, r2, fmt, a2, fin, UP, apportion, normPt, parseRings, parsePoints, ringsArea, ringOpen, blankProject, GU, mkUnit, sampleProject, unitMain, compute, runChecks };

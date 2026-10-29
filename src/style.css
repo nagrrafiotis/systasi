@@ -173,3 +173,8 @@ body.locked{overflow:hidden}
 table.dt tr.bhead td{background:var(--accent-soft);border-bottom-color:var(--line)}
 table.dt tr.bhead.warnrow td{background:var(--warn-soft)}
 table.dt tr.in-b > td:first-child{padding-left:22px}
+/* κλείδωμα ποσοστών */
+input.lockin{width:92px}
+input.lockin::placeholder{color:var(--ink);opacity:.62}
+input.lockin.locked{border-color:var(--accent);background:var(--accent-soft);font-weight:600}
+select.flsel{font-size:12px;padding:2px 4px;max-width:120px}

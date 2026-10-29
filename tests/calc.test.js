@@ -95,3 +95,66 @@ describe('κτίρια — κάθετη και οριζόντια ιδιοκτη
     }
   });
 });
+
+describe('μέθοδοι του πίνακα αναλογισμού (στάθμες, όγκος, κλείδωμα, δαπάνες, ψήφοι)', async () => {
+  const m = await import('../src/core.js');
+  const mk = (rows, plot = 332) => { const p = blankProject(); p.info.plotArea = plot; p.units = rows.map(([n, a, f = 0, h = null]) => { const u = mkUnit(null, n); u.main = a; u.floor = f; u.height = h; return u; }); return p; };
+  const pmOf = (p, c) => p.units.map(u => c.u[u.id].pm);
+
+  it('παράδειγμα Μαυρογένη (4 διαμερίσματα, όγκος, ίδιο ύψος): ίδια ‰ και m²', () => {
+    const p = mk([['Α1', 44.93, 1, 3], ['Α2', 23.94, 1, 3], ['Α3', 41.10, 1, 3], ['Α4', 2.61, 1, 3]]); p.calc.basis = 'volume';
+    const c = compute(p);
+    expect(pmOf(p, c)).toEqual([399.10, 212.65, 365.07, 23.18]); // το αρχείο δίνει 399,09 / 23,19 — ίδιο σύνολο, άλλη στρογγυλοποίηση
+    expect(p.units.map(u => c.u[u.id].plot)).toEqual([132.5, 70.6, 121.2, 7.7]);
+    expect(p.units.map(u => c.u[u.id].vol)).toEqual([134.79, 71.82, 123.3, 7.83]);
+    expect(p.units.map(u => c.u[u.id].votes)).toEqual([399, 213, 365, 23]);
+  });
+  it('συντελεστής αξίας: υπόγειο 0,50 · ισόγειο 1,00 · 2ος 1,10', () => {
+    const p = mk([['ΥΠ', 100, -1], ['ΙΣ', 100, 0], ['Β', 100, 2]]); p.calc.valueMode = 'floor';
+    const c = compute(p); const W = 0.5 + 1 + 1.1;
+    expect(pmOf(p, c)).toEqual([192.31, 384.61, 423.08]); // ακριβή 192,3077 / 384,6154 / 423,0769 — μεγαλύτερο υπόλοιπο
+    expect(c.pmSum).toBe(1000);
+  });
+  it('κλείδωμα: αποθήκη 15‰, οι υπόλοιπες μοιράζονται τα 985‰ αναλογικά', () => {
+    const p = mk([['Α1', 80], ['Α2', 120], ['ΑΠ', 10]]); p.units[2].pmFixed = 15;
+    const c = compute(p);
+    expect(pmOf(p, c)).toEqual([394, 591, 15]);
+    expect(c.checks.filter(x => x.sev === 'err')).toEqual([]);
+  });
+  it('κλειδωμένα πάνω από 1000‰ → σφάλμα', () => {
+    const p = mk([['Α1', 80], ['Α2', 120]]); p.units[0].pmFixed = 700; p.units[1].pmFixed = 400;
+    expect(compute(p).checks.some(x => x.sev === 'err' && /κλειδωμένα/.test(x.msg))).toBe(true);
+  });
+  it('ανελκυστήρας: ισόγειο 0, α΄ 1,00, β΄ 1,10 επί όγκου · θέρμανση με συντελεστή από μελέτη', () => {
+    const p = mk([['ΙΣ', 100, 0], ['Α', 100, 1], ['Β', 100, 2]]);
+    p.groups = [{ id: 'el', name: 'Ανελκυστήρας', all: true, units: [], mode: 'elevator', manual: {}, fixed: {}, items: [] },
+                { id: 'ht', name: 'Θέρμανση', all: true, units: [], mode: 'heating', manual: {}, fixed: {}, items: [] }];
+    p.calc.heatCoef = { '2': 1.2 };
+    const c = compute(p), el = c.grp.el.alloc, ht = c.grp.ht.alloc;
+    expect(p.units.map(u => el[u.id])).toEqual([0, 476.19, 523.81]);
+    expect(p.units.map(u => ht[u.id])).toEqual([312.5, 312.5, 375]);
+    expect(c.grp.el.allocSum).toBe(1000);
+  });
+  it('κλείδωμα σε κατανομή δαπανών', () => {
+    const p = mk([['Α', 100], ['Β', 100], ['Γ', 100]]); p.groups = [{ id: 'g', name: 'Κ', all: true, units: [], mode: 'equal', manual: {}, fixed: {}, items: [] }];
+    p.groups[0].fixed[p.units[2].id] = 100; const c = compute(p);
+    expect(p.units.map(u => c.grp.g.alloc[u.id])).toEqual([450, 450, 100]);
+  });
+  it('2.000 τυχαία έργα με στάθμες, όγκο, κλειδώματα: όλα κλείνουν, ψήφοι = 1000', () => {
+    for (let t = 0; t < 2000; t++) {
+      const n = 2 + Math.floor(rnd() * 12);
+      const p = mk(Array.from({ length: n }, (_, i) => ['Κ' + i, R(15, 200), i === 0 ? 1 : Math.floor(rnd() * 7) - 1, rnd() < .5 ? R(2.6, 4.2) : null]), R(200, 9000));
+      p.calc.dec = [1, 2, 3][t % 3]; p.calc.basis = t % 2 ? 'volume' : 'area'; p.calc.valueMode = t % 4 < 2 ? 'floor' : 'none';
+      const f = 10 ** p.calc.dec; let budget = 300;
+      p.units.forEach((u, i) => { if (i < n - 1 && rnd() < .2) { const v = Math.round(R(1, budget / 3) * f) / f; budget -= v; u.pmFixed = v; } });
+      p.groups = [{ id: 'el', name: 'Α', all: true, units: [], mode: 'elevator', manual: {}, fixed: {}, items: [] }, { id: 'v', name: 'Β', all: true, units: [], mode: 'volume', manual: {}, fixed: {}, items: [] }];
+      const c = compute(p), I = v => Math.round(v * f);
+      expect(c.checks.filter(x => x.sev === 'err').map(x => x.msg)).toEqual([]);
+      expect(p.units.reduce((a, u) => a + I(c.u[u.id].pm), 0)).toBe(1000 * f);
+      p.units.forEach(u => { if (u.pmFixed != null) expect(c.u[u.id].pm).toBe(u.pmFixed); });
+      expect(p.units.reduce((a, u) => a + c.u[u.id].votes, 0)).toBe(1000);
+      expect(p.units.reduce((a, u) => a + cents(c.u[u.id].plot), 0)).toBe(cents(p.info.plotArea));
+      ['el', 'v'].forEach(g => { if (Object.values(c.grp[g].alloc).some(v => v > 0)) expect(Object.values(c.grp[g].alloc).reduce((a, v) => a + I(v || 0), 0)).toBe(1000 * f); });
+    }
+  });
+});

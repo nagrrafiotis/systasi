@@ -5,7 +5,10 @@ HERE=os.path.dirname(os.path.abspath(__file__)); DIST=os.path.join(HERE,'dist');
 srv=subprocess.Popen([sys.executable,'-m','http.server','4197','-d',DIST],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); time.sleep(1)
 ok=[];bad=[]
 def check(n,c): (ok if c else bad).append(n); print(('PASS ' if c else 'FAIL ')+n)
-async def calc(pg,key): return (await pg.text_content(f'[data-calc="{key}"]') or '').strip()
+async def calc(pg,key):
+    if await pg.locator(f'[data-calc="{key}"]').count(): return (await pg.text_content(f'[data-calc="{key}"]') or '').strip()
+    el=pg.locator(f'[data-ph="{key}"]').first; v=(await el.input_value()).strip()
+    return v or (await el.get_attribute('placeholder') or '').strip()
 async def main():
   async with async_playwright() as p:
     b=await p.chromium.launch(); ctx=await b.new_context(viewport={'width':1400,'height':950},accept_downloads=True); pg=await ctx.new_page(); errs=[]
@@ -44,8 +47,9 @@ async def main():
     await pg.click(f'[data-act=b-group][data-id="{bids[1]}"]'); await pg.wait_for_timeout(400)
     txt=await pg.text_content('#main')
     check('κοινόχρηστα κτιρίου Β: δεμένα στο κτίριο', 'Συμμετέχουν όλες οι ιδιοκτησίες του κτιρίου' in txt)
-    vals=await pg.eval_on_selector_all('[data-calc^="g."]','els=>els.map(e=>e.textContent.trim())')
-    check('κοινόχρηστα Β: κατανομή 500/250/250', vals[-4:]==['500,00','250,00','250,00','1000,00'] or ['500,00','250,00','250,00'] == vals[-4:-1])
+    vals=await pg.eval_on_selector_all('[data-ph^="g."]','els=>els.map(e=>e.value.trim()||e.placeholder)')
+    tot=await pg.eval_on_selector_all('[data-calc^="g."][data-calc$=".sum"]','els=>els.map(e=>e.textContent.trim())')
+    check('κοινόχρηστα Β: κατανομή 500/250/250', vals[-3:]==['500,00','250,00','250,00'] and tot[-1]=='1000,00')
     # έλεγχοι
     await pg.click('a[href="#checks"]'); await pg.wait_for_timeout(200)
     errsTxt=await pg.eval_on_selector_all('.ck.err','els=>els.map(e=>e.textContent)')

@@ -23,3 +23,5 @@
 .doc tr.bld td{background:#f7f7f7;font-weight:700}
 .doc td.lbl.ind{padding-left:14px}
 .doc .descr p.bld{font-weight:700;margin-top:14px}
+.doc .notes{font-size:9px;margin-top:8px}
+.doc .notes ol{margin:2px 0 0 16px;padding:0}
