@@ -1,0 +1,23 @@
+{
+  "name": "systasi",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:e2e": "vite build --config tests/e2e/vite.fake.config.js && python3 tests/e2e/e2e.py"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "exceljs": "4.4.0",
+    "pdfmake": "0.2.10"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.2.0",
+    "vite": "^5.4.0",
+    "vitest": "^2.1.0"
+  }
+}

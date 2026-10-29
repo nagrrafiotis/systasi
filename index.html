@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Πίνακες Σύστασης Ιδιοκτησίας</title>
+<meta name="description" content="Χιλιοστά, αποκλειστικές χρήσεις και κοινόχρηστα για σύσταση οριζόντιας/κάθετης ιδιοκτησίας.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='none' stroke='%234a3c8c' stroke-width='3'/%3E%3Ctext x='16' y='21' font-size='13' text-anchor='middle' fill='%234a3c8c' font-family='Arial' font-weight='700'%3E‰%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Mono&family=Fira+Sans+Condensed:wght@500;600;700&family=Noto+Sans:wght@400;500;600&display=swap">
+</head>
+<body>
+<div lang="el">
+<header class="top">
+  <div class="wrap">
+    <div class="brand">
+      <div class="seal" aria-hidden="true">‰</div>
+      <div><h1>Πίνακες Σύστασης Ιδιοκτησίας</h1><small>Χιλιοστά, αποκλειστικές χρήσεις, κοινόχρηστα — για το συμβόλαιο</small></div>
+    </div>
+    <div class="projbar">
+      <select id="projSel" aria-label="Έργο"></select>
+      <details class="menu" id="menuNew">
+        <summary class="btn">Νέο έργο</summary>
+        <div class="pop">
+          <button type="button" data-act="new-blank">Κενό έργο</button>
+          <button type="button" data-act="new-sample">Από το παράδειγμα συμβολαιογράφου</button>
+          <button type="button" data-act="import">Εισαγωγή αντιγράφου (.json)</button>
+        </div>
+      </details>
+      <details class="menu" id="menuMore">
+        <summary class="btn" aria-label="Ενέργειες έργου">⋯</summary>
+        <div class="pop">
+          <div class="who" id="who"></div>
+          <button type="button" data-act="dup">Διπλότυπο έργου</button>
+          <button type="button" data-act="backup">Αντίγραφο ασφαλείας έργου (.json)</button>
+          <button type="button" data-act="backup-all">Εξαγωγή όλων των έργων (.json)</button>
+          <button type="button" data-act="history">Ιστορικό εκδόσεων έργου</button>
+          <button type="button" data-act="trash">Διαγραμμένα έργα</button>
+          <hr>
+          <button type="button" class="danger" data-act="del">Διαγραφή έργου</button>
+          <button type="button" data-act="logout">Αποσύνδεση</button>
+        </div>
+      </details>
+      <span class="status" id="status"><i></i><span>Φόρτωση…</span></span>
+    </div>
+  </div>
+</header>
+<div class="wrap">
+  <div id="banner"></div>
+  <div class="figs" id="figs"></div>
+  <nav class="tabs" id="tabs" aria-label="Ενότητες"></nav>
+  <main id="main"></main>
+</div>
+<input type="file" id="fileIn" accept=".json,application/json" hidden>
+<section id="auth" class="auth" hidden>
+  <form id="authForm" class="auth-card" novalidate>
+    <div class="brand"><div class="seal" aria-hidden="true">‰</div><div><h1>Πίνακες Σύστασης Ιδιοκτησίας</h1></div></div>
+    <h2 id="authTitle">Σύνδεση</h2>
+    <p id="authMsg" class="auth-msg" hidden></p>
+    <label class="f" id="authEmailRow"><span>Email</span><input type="email" id="authEmail" autocomplete="email" required></label>
+    <label class="f" id="authPassRow"><span>Κωδικός</span><input type="password" id="authPass" autocomplete="current-password"></label>
+    <p id="authErr" class="auth-err" role="alert" hidden></p>
+    <button class="btn primary" id="authSubmit" type="submit">Σύνδεση</button>
+    <div class="auth-links" id="authLinks"></div>
+  </form>
+</section>
+<dialog id="dlg" class="dlg"><div class="dlg-head"><h2 id="dlgTitle"></h2><button type="button" class="btn ghost" data-dlg-close aria-label="Κλείσιμο">✕</button></div><div id="dlgBody" class="dlg-body"></div></dialog>
+</div>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
