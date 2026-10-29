@@ -826,7 +826,8 @@ function pdfDef(p,c,o){
     {width:250,table:{widths:['*'],body:[[{alignment:'center',fontSize:7.5,stack:[{text:UP(e.name||''),bold:true,fontSize:8.5},e.title||'',e.office||'',e.address||'',[e.tee&&('Α.Μ. ΤΕΕ: '+e.tee),e.afm&&('ΑΦΜ: '+e.afm)].filter(Boolean).join(' · '),e.phone?('Τηλ.: '+e.phone):'',{text:'(υπογραφή – σφραγίδα)',color:'#555555',margin:[0,26,0,0]}].filter(x=>x!=='')}]]},layout:LAY}]});
   const secs=[];
   const pdfTable=(M,labelW=82)=>{ const F='#f1f1f1', BF='#f7f7f7';
-    const widths=M.cols.map(k=>k.t==='label'?labelW:k.t==='area'?(k.k==='excl'?'*':100):(k.k==='pmB'||k.k==='pm'||k.k.startsWith('g_'))?56:k.k==='plot'?52:40);
+    // οι στήλες αποκλειστικών χρήσεων μοιράζονται το υπόλοιπο πλάτος (δεν βγαίνει ο πίνακας εκτός σελίδας)
+    const widths=M.cols.map(k=>k.t==='label'?labelW:k.t==='area'?'*':(k.k==='pmB'||k.k==='pm'||k.k.startsWith('g_'))?56:k.k==='plot'?52:40);
     if(!widths.includes('*')) widths[0]='*';
     const hdr=M.cols.map(k=>k.note?H([{text:`${k.h} ${k.u||''}\n`},{text:k.note,bold:false,fontSize:6}]):H(`${k.h}${k.u?'\n'+k.u:''}`));
     const cell=(k,val,kind)=>{ const x=kind==='tot'?{bold:true,fillColor:F}:kind==='bld'?{bold:true,fillColor:BF}:{};
