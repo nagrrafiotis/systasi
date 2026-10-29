@@ -158,3 +158,42 @@ describe('μέθοδοι του πίνακα αναλογισμού (στάθμ�
     }
   });
 });
+
+describe('σενάριο: δύο κτίρια διαφορετικού μεγέθους με πυλωτές (tests/two-buildings-pilotis.json)', async () => {
+  const m = await import('../src/core.js');
+  const { readFileSync } = await import('node:fs');
+  const S = JSON.parse(readFileSync(new URL('./two-buildings-pilotis.json', import.meta.url), 'utf8'));
+  const p = m.blankProject(); p.info.plotArea = S.plot; p.info.coverage = S.coverage; p.info.regime = 'kathoriz'; p.units = []; p.buildings = []; p.excl = []; p.groups = [];
+  const U = {};
+  S.buildings.forEach((bs, bi) => { const b = m.mkBuilding(bs.code); p.buildings.push(b);
+    p.excl.push({ id: 'l' + bi, unit: 'b:' + b.id, kind: 'garden', area: bs.land, boundary: '' });
+    bs.units.forEach(([code, fl, main, semi]) => { const u = m.mkUnit(null, code); Object.assign(u, { bld: b.id, floor: fl, main, semi }); p.units.push(u); U[code] = u; });
+    bs.parking.forEach(([code, o]) => p.excl.push({ id: code, unit: U[o].id, kind: 'pilotis', code, area: S.parkArea, boundary: '' }));
+    p.groups.push({ id: 'b' + bi, name: 'Κ ' + bs.code, bld: b.id, all: false, units: [], mode: 'pm', manual: {}, fixed: {}, items: bs.commons.map(([n, z, a], k) => ({ id: bi + '' + k, name: n, zone: z, area: a })) }); });
+  p.groups.push({ id: 'el', name: 'Ανελκυστήρας Α', bld: p.buildings[0].id, all: false, units: [], mode: 'elevator', manual: {}, fixed: {}, items: [] });
+  p.groups.push({ id: 'gen', name: 'Γενικά', all: true, units: [], mode: 'pm', manual: {}, fixed: {}, items: S.general.map(([n, z, a], k) => ({ id: 'g' + k, name: n, zone: z, area: a })) });
+  const c = m.compute(p), cu = k => c.u[U[k].id];
+  it('ποσοστά κτιρίων και ιδιοκτησιών όπως ο ανεξάρτητος υπολογισμός', () => {
+    expect(p.buildings.map(b => c.b[b.id].pm)).toEqual([732.42, 267.58]);
+    expect(p.buildings.map(b => c.b[b.id].plot)).toEqual([1098.63, 401.37]);
+    expect(['Α1', 'Α2', 'Α3', 'Α4', 'Α5', 'Β1', 'Β2'].map(k => cu(k).pm)).toEqual([155.65, 112.17, 155.65, 112.17, 196.78, 133.79, 133.79]);
+    expect(['Α1', 'Α2', 'Α3', 'Α4', 'Α5'].map(k => cu(k).pmB)).toEqual([212.52, 153.15, 212.52, 153.15, 268.66]);
+  });
+  it('πανομοιότυπα διαμερίσματα: ίσα ‰, m² και ψήφοι', () => {
+    expect(cu('Α1').pm).toBe(cu('Α3').pm); expect(cu('Α1').plot).toBe(cu('Α3').plot); expect(cu('Α1').votes).toBe(cu('Α3').votes);
+    expect(cu('Α2').plot).toBe(cu('Α4').plot); expect(cu('Β1').votes).toBe(cu('Β2').votes);
+    expect(p.units.reduce((a, u) => a + c.u[u.id].votes, 0)).toBe(1000);
+  });
+  it('κοινόχρηστα κτιρίου κατά ‰ επί του κτιρίου', () => {
+    expect(['Α1', 'Α2', 'Α3', 'Α4', 'Α5'].map(k => c.grp.b0.alloc[U[k].id])).toEqual([212.52, 153.15, 212.52, 153.15, 268.66]);
+    expect(['Β1', 'Β2'].map(k => c.grp.b1.alloc[U[k].id])).toEqual([500, 500]);
+  });
+  it('ανελκυστήρας μόνο του Α, κατά όροφο', () => {
+    expect(['Α1', 'Α2', 'Α3', 'Α4', 'Α5'].map(k => c.grp.el.alloc[U[k].id])).toEqual([194.92, 140.47, 214.41, 154.51, 295.69]);
+    expect(c.grp.el.alloc[U['Β1'].id]).toBeUndefined();
+  });
+  it('πυλωτές: οι θέσεις δεν αφαιρούνται από τον ακάλυπτο· το ισοζύγιο κλείνει', () => {
+    expect(c.tot.park).toBe(87.5); expect(c.bal.park).toBe(0); expect(c.bal.pil).toBe(87.5); expect(c.bal.diff).toBe(0);
+    expect(c.checks.filter(x => x.sev === 'err')).toEqual([]);
+  });
+});

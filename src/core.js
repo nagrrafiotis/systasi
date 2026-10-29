@@ -39,7 +39,7 @@ function distribute(weights,fixed,total,dec){
   return out;
 }
 const LEVELS=[['Υπόγειο','ΥΠ.'],['Ισόγειο','ΙΣ.'],['Όροφος','ΟΡ.'],["Α' όροφος","Α' ΟΡ."],["Β' όροφος","Β' ΟΡ."],["Γ' όροφος","Γ' ΟΡ."],["Δ' όροφος","Δ' ΟΡ."],['Σοφίτα','ΣΟΦ.'],['Πατάρι','ΠΑΤ.']];
-const ZONES=['Υπαίθριος','Ισόγειο','Υπόγειο','Κτίριο','Δώμα'];
+const ZONES=['Υπαίθριος','Πυλωτή','Ισόγειο','Υπόγειο','Κτίριο','Δώμα'];
 const REGIMES={oriz:'Οριζόντια ιδιοκτησία',kath:'Κάθετη ιδιοκτησία',kathoriz:'Κάθετη και οριζόντια ιδιοκτησία'};
 const PLOT_TYPES={oik:['Οικόπεδο','ΟΙΚΟΠΕΔΟΥ','οικοπέδου'],gip:['Γήπεδο','ΓΗΠΕΔΟΥ','γηπέδου'],agr:['Αγροτεμάχιο','ΑΓΡΟΤΕΜΑΧΙΟΥ','αγροτεμαχίου']};
 const AREAS_ZONE={entos:'Εντός σχεδίου',oikismos:'Εντός ορίων οικισμού',ektos:'Εκτός σχεδίου / εκτός οικισμού'};
@@ -64,12 +64,26 @@ function fmt(v,d=2){ if(v==null||v===''||!isFinite(v)) return '—'; let n=Numbe
 const a2=v=>{const n=num(v);return n==null?null:r2(n);};
 const fin=v=>v==null?'':(Number.isInteger(v*100)||Math.abs(v*100-Math.round(v*100))<1e-9?Number(v).toFixed(2):String(v)).replace('.',',');
 const UP=s=>String(s??'').toLocaleUpperCase('el-GR').normalize('NFD').replace(/[̀-ͯ]/g,'');
+/** Στρογγυλοποίηση με τη μέθοδο του μεγαλύτερου υπολοίπου, ώστε το άθροισμα να είναι ακριβώς total.
+ *  Ίσες τιμές (π.χ. πανομοιότυπα διαμερίσματα) παίρνουν τη μονάδα στρογγυλοποίησης όλες μαζί ή καμία:
+ *  διαλέγεται ο συνδυασμός ομάδων που καλύπτει ακριβώς το υπόλοιπο με τα μεγαλύτερα υπόλοιπα.
+ *  Μόνο αν τέτοιος συνδυασμός δεν υπάρχει, σπάει μία ισοβαθμία. Κάθε τιμή απέχει < 1 μονάδα από την ακριβή. */
 function apportion(vals,total,dec){
   const f=10**dec, raw=vals.map(v=>v*f), fl=raw.map(v=>Math.floor(v+1e-7));
   let rem=Math.round(total*f)-fl.reduce((a,b)=>a+b,0);
-  const ord=raw.map((v,i)=>[v-fl[i],i]).sort((a,b)=>b[0]-a[0]);
-  for(let k=0;rem>0&&k<ord.length;k++,rem--) fl[ord[k][1]]++;
-  for(let k=ord.length-1;rem<0&&k>=0;k--,rem++) fl[ord[k][1]]--;
+  const frac=i=>raw[i]-fl[i];
+  if(rem>0){
+    const byVal=new Map(); raw.forEach((v,i)=>{ const k=Math.round(v*1e4); if(!byVal.has(k)) byVal.set(k,[]); byVal.get(k).push(i); });
+    const G=[...byVal.values()].sort((a,b)=>frac(b[0])-frac(a[0])||raw[b[0]]-raw[a[0]]);
+    // knapsack: best[r] = μέγιστο Σ(υπόλοιπα) με ομάδες που αθροίζουν r στοιχεία
+    const best=new Array(rem+1).fill(-Infinity), pick=new Array(rem+1).fill(null); best[0]=0; pick[0]=[];
+    G.forEach((g,gi)=>{ const sz=g.length, gain=sz*frac(g[0]);
+      for(let r=rem;r>=sz;r--) if(best[r-sz]>-Infinity&&best[r-sz]+gain>best[r]+1e-12){ best[r]=best[r-sz]+gain; pick[r]=pick[r-sz].concat(gi); } });
+    if(pick[rem]){ pick[rem].forEach(gi=>G[gi].forEach(i=>fl[i]++)); rem=0; }
+    else { // δεν γίνεται χωρίς να σπάσει ισοβαθμία: το κλασικό μεγαλύτερο υπόλοιπο, και στις ισοβαθμίες προηγείται η μεγαλύτερη τιμή
+      const ord=raw.map((v,i)=>i).sort((a,b)=>frac(b)-frac(a)||raw[b]-raw[a]||a-b); for(let k=0;rem>0&&k<ord.length;k++,rem--) fl[ord[k]]++; }
+  }
+  if(rem<0){ const ord=raw.map((v,i)=>i).sort((a,b)=>frac(a)-frac(b)||raw[a]-raw[b]); for(let k=0;rem<0&&k<ord.length;k++,rem++) fl[ord[k]]--; }
   return fl.map(v=>v/f);
 }
 const normPt=s=>UP(s).replace(/[\s./\\-]/g,'');
@@ -272,7 +286,7 @@ function compute(p){
     const us=GU(p,g);
     let vals;
     const uo=id=>p.units.find(u=>u.id===id), cu=id=>c.u[id];
-    const gw={equal:()=>1,pm:id=>nz(cu(id).pm),volume:id=>nz(cu(id).vol),elevator:id=>elevCoef(p,uo(id).floor)*nz(cu(id).vol),heating:id=>heatCoef(p,uo(id).floor)*nz(cu(id).vol)}[g.mode];
+    const gw={equal:()=>1,pm:id=>(c.two&&g.bld)?nz(cu(id).pmB):nz(cu(id).pm),volume:id=>nz(cu(id).vol),elevator:id=>elevCoef(p,uo(id).floor)*nz(cu(id).vol),heating:id=>heatCoef(p,uo(id).floor)*nz(cu(id).vol)}[g.mode];
     if(gw) vals=us.length?distribute(us.map(gw),us.map(id=>num((g.fixed||{})[id])),1000,dec):[];
     else vals=us.map(id=>num((g.manual||{})[id]));
     us.forEach((id,i)=>G.alloc[id]=vals[i]);

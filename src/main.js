@@ -625,9 +625,9 @@ function docMain(p,c){
 /* Πίνακας κατανομής δαπανών και ψήφων: μία στήλη ανά ομάδα δαπανών */
 function expModel(p,c){
   const d=Number(p.calc.dec??2), G=PLOT_TYPES[p.info.plotType]||PLOT_TYPES.oik, gs=p.groups.filter(g=>GU(p,g).length);
-  const modeTxt={equal:'ισόποσα',pm:'κατά τα χιλιοστά',volume:'κατά τον όγκο',elevator:'όγκος × συντ. ορόφου',heating:'ενδεικτικά — από μελέτη',manual:'κατά συμφωνία'};
+  const modeTxt={equal:'ισόποσα',pm:'κατά τα χιλιοστά',pmB:'κατά ‰ επί κτιρίου',volume:'κατά τον όγκο',elevator:'όγκος × συντ. ορόφου',heating:'ενδεικτικά — από μελέτη',manual:'κατά συμφωνία'};
   const cols=[{k:'label',h:'ΙΔΙΟΚΤΗΣΙΕΣ',t:'label'},{k:'pm',h:`ΠΟΣΟΣΤΟ ΣΥΝΙΔΙΟΚΤΗΣΙΑΣ ${G[1]}`,u:'(‰)',t:'num',dec:d},
-    ...gs.map(g=>({k:'g_'+g.id,h:UP(g.name),u:'(‰)',note:modeTxt[g.mode]||'',t:'num',dec:d})),{k:'votes',h:'ΨΗΦΟΙ',u:'(‰)',t:'num',dec:0}];
+    ...gs.map(g=>({k:'g_'+g.id,h:UP(g.name),u:'(‰)',note:modeTxt[(g.mode==='pm'&&g.bld&&c.two)?'pmB':g.mode]||'',t:'num',dec:d})),{k:'votes',h:'ΨΗΦΟΙ',u:'(‰)',t:'num',dec:0}];
   const rows=[], uRow=(u,ind)=>{ const cu=c.u[u.id]; const v={label:{text:u.code||'',subs:[Number(u.floor||0)!==0||p.calc.valueMode==='floor'?floorName(u.floor||0):''].filter(Boolean),ind},pm:cu.pm,votes:cu.votes};
     gs.forEach(g=>{ const a=c.grp[g.id].alloc[u.id]; v['g_'+g.id]=a===undefined?null:a; }); rows.push({kind:'unit',v}); };
   if(p.buildings.length){ p.buildings.forEach(b=>{ rows.push({kind:'bld',v:{label:{text:b.code||'(κτίριο)',subs:[]},pm:c.b[b.id].pm}}); p.units.filter(u=>u.bld===b.id).forEach(u=>uRow(u,true)); }); p.units.filter(u=>!bOf(p,u)).forEach(u=>uRow(u,false)); }
@@ -644,13 +644,13 @@ function docCommon(p,c){
   const blocks=p.groups.map(g=>{ const G=c.grp[g.id]; const uc=GU(p,g).map(id=>p.units.find(u=>u.id===id)).filter(Boolean);
     const zones=[...new Set(g.items.map(i=>i.zone))];
     const left=zones.map(z=>{ const its=g.items.filter(i=>i.zone===z);
-      return `<table style="margin-bottom:8px"><thead><tr><th colspan="3">ΑΝΑΛΥΣΗ ΚΟΙΝΟΧΡΗΣΤΩΝ ΧΩΡΩΝ${z!=='Υπαίθριος'?' '+UP(z==='Κτίριο'?'κτιρίου':z==='Υπόγειο'?'υπογείου':z==='Ισόγειο'?'ισογείου':'δώματος'):''} (${esc(uc.map(u=>u.code).join(', '))})</th></tr>
+      return `<table style="margin-bottom:8px"><thead><tr><th colspan="3">ΑΝΑΛΥΣΗ ΚΟΙΝΟΧΡΗΣΤΩΝ ΧΩΡΩΝ${z!=='Υπαίθριος'?' '+(ZONE_HEAD[z]||UP(z)):''} (${esc(uc.map(u=>u.code).join(', '))})</th></tr>
         <tr><th style="width:40%">ΠΕΡΙΓΡΑΦΗ ΧΩΡΩΝ</th><th style="width:14%">(m²)</th><th>ΣΗΜΕΙΑ ΠΕΡΙΓΡΑΦΗΣ ΧΩΡΟΥ</th></tr></thead>
         <tbody>${its.map(i=>`<tr><td class="lbl" style="white-space:normal">${esc(UP(i.name))}</td><td class="n">${fmt(num(i.area))}</td><td class="pt">${esc(i.boundary)||'—'}</td></tr>`).join('')}
         <tr class="tot"><td>ΣΥΝΟΛΟ ΚΟΙΝΟΧΡΗΣΤΩΝ ΧΩΡΩΝ</td><td class="n">${fmt(G.zone[z])} m²</td><td></td></tr></tbody></table>`; }).join('');
     const right=`<table><thead><tr><th colspan="2">ΑΝΑΛΟΓΙΑ ΔΑΠΑΝΩΝ ΕΠΙ ΚΟΙΝΟΧΡΗΣΤΩΝ</th></tr><tr><th>ΙΔΙΟΚΤΗΣΙΕΣ</th><th>‰</th></tr></thead><tbody>
        ${uc.map(u=>`<tr><td class="lbl">${esc(u.code)}</td><td class="n">${fmt(G.alloc[u.id],d)}</td></tr>`).join('')}<tr class="tot"><td>ΣΥΝΟΛΟ</td><td class="n">${fmt(G.allocSum,d)}</td></tr></tbody></table>
-       <p class="note">Κατανομή: ${g.mode==='equal'?'ισόποσα μεταξύ των συμμετεχουσών ιδιοκτησιών':g.mode==='pm'?'κατ’ αναλογία των ποσοστών συνιδιοκτησίας':'κατά συμφωνία'}.</p>`;
+       <p class="note">Κατανομή: ${esc(allocText(p,g))}.${pilotisNote(p,c,g)?'<br>'+esc(pilotisNote(p,c,g)):''}</p>`;
     return `<div class="gtitle">${esc(UP(g.name))}</div>`+(g.items.length?`<div class="two"><div>${left}</div><div>${right}</div></div>`:`<div style="max-width:440px">${right}</div>`); }).join('');
   return `<section class="doc"><h4>ΠΙΝΑΚΑΣ ΚΟΙΝΟΧΡΗΣΤΩΝ ΧΩΡΩΝ ΚΑΙ ΚΑΤΑΝΟΜΗΣ ΔΑΠΑΝΩΝ</h4>${headSub(p)}${blocks}${stampHTML(p)}</section>`;
 }
@@ -665,8 +665,24 @@ function docExcl(p,c){
 /** Αποκλειστικές χρήσεις με τη σειρά του πίνακα: κτίριο, μετά οι ιδιοκτησίες του. */
 function exclOrdered(p){ const order=[]; if(p.buildings.length){ p.buildings.forEach(b=>{ order.push(BLD_PREFIX+b.id); p.units.filter(u=>u.bld===b.id).forEach(u=>order.push(u.id)); }); p.units.filter(u=>!bOf(p,u)).forEach(u=>order.push(u.id)); } else p.units.forEach(u=>order.push(u.id));
   const ix=x=>{ const k=order.indexOf(x.unit); return k<0?1e9:k; }; return [...p.excl].sort((a,b)=>ix(a)-ix(b)); }
+/** Πώς κατανέμεται μια ομάδα δαπανών, σε κείμενο για τους πίνακες. */
+function allocText(p,g){ const b=g.bld&&p.buildings.find(x=>x.id===g.bld);
+  return {equal:'ισόποσα μεταξύ των συμμετεχουσών ιδιοκτησιών',
+    pm:(b&&p.info.regime==='kathoriz')?`κατ’ αναλογία των ποσοστών επί της καθέτου ιδιοκτησίας «${b.code}»`:'κατ’ αναλογία των ποσοστών συνιδιοκτησίας',
+    volume:'κατ’ αναλογία του όγκου κάθε ιδιοκτησίας',
+    elevator:'κατ’ αναλογία του όγκου επί συντελεστή ορόφου (ανελκυστήρας)',
+    heating:'κατ’ αναλογία του όγκου επί συντελεστή θέρμανσης (ενδεικτικά — βάσει μελέτης μηχανολόγου)',
+    manual:'κατά συμφωνία'}[g.mode]||'κατά συμφωνία'; }
+const ZONE_HEAD={'Κτίριο':'ΚΤΙΡΙΟΥ','Υπόγειο':'ΥΠΟΓΕΙΟΥ','Ισόγειο':'ΙΣΟΓΕΙΟΥ','Πυλωτή':'ΠΥΛΩΤΗΣ','Δώμα':'ΔΩΜΑΤΟΣ'};
+/** Ανάλυση πυλωτής κτιρίου: κοινόχρηστο μέρος + θέσεις αποκλειστικής χρήσης των ιδιοκτησιών του. */
+function pilotisNote(p,c,g){ if(!g.bld||!(g.items||[]).length) return '';
+  const ids=GU(p,g), pk=p.excl.filter(x=>x.kind==='pilotis'&&ids.includes(x.unit)); if(!pk.length) return '';
+  const pkA=r2(pk.reduce((a,x)=>a+nz(a2(x.area)),0)), com=r2(g.items.filter(i=>i.zone==='Πυλωτή').reduce((a,i)=>a+nz(a2(i.area)),0));
+  const codes=pk.map(x=>x.code).filter(Boolean).join(', ');
+  return com?`Πυλωτή: ${fmt(com)} m² κοινόχρηστη + ${fmt(pkA)} m² θέσεις στάθμευσης αποκλειστικής χρήσης${codes?' ('+codes+')':''} = ${fmt(r2(com+pkA))} m².`:`Θέσεις στάθμευσης αποκλειστικής χρήσης στην πυλωτή${codes?' ('+codes+')':''}: ${fmt(pkA)} m².`; }
 const LETTERS='αβγδεζηθικλμνξοπρστυφχψω';
-function exclText(list){ return list.map((x,i)=>`${list.length>1?LETTERS[i]+') ':''}${(KINDS[x.kind]||KINDS.other).txt}${x.code?' με στοιχείο '+x.code:''} εμβαδού ${fmt(num(x.area))} τ.μ.${x.boundary?', που ορίζεται από τα σημεία '+(x.boundary.trim().startsWith('(')?x.boundary.trim():'('+x.boundary.trim()+')'):''}`).join(', '); }
+function floorPhrase(f){ f=Number(f); return f===0?'του ισογείου':f===-1?'του υπογείου':f===-2?'του β΄ υπογείου':`του ${f}ου ορόφου`; }
+function exclText(list,b){ return list.map((x,i)=>`${list.length>1?LETTERS[i]+') ':''}${(KINDS[x.kind]||KINDS.other).txt}${x.kind==='pilotis'&&b?' του κτιρίου «'+b.code+'»':''}${x.code?' με στοιχείο '+x.code:''} εμβαδού ${fmt(num(x.area))} τ.μ.${x.boundary?', που ορίζεται από τα σημεία '+(x.boundary.trim().startsWith('(')?x.boundary.trim():'('+x.boundary.trim()+')'):''}`).join(', '); }
 function unitDescription(p,c,u){
   if(u.descr&&u.descr.trim()) return u.descr.trim();
   const cu=c.u[u.id],G=PLOT_TYPES[p.info.plotType]||PLOT_TYPES.oik,d=Number(p.calc.dec??2), b=bOf(p,u), two=c.two&&b;
@@ -678,15 +694,16 @@ function unitDescription(p,c,u){
   if(cu.base) parts.push(`υπόγειο βοηθητικό χώρο (αποθήκη) εμβαδού ${fmt(cu.base)} τ.μ.`);
   if(cu.pool) parts.push(`πισίνα εμβαδού ${fmt(cu.pool)} τ.μ.`);
   if(cu.tanks) parts.push(`υπόγειες δεξαμενές εμβαδού ${fmt(cu.tanks)} τ.μ.`);
-  let t=`${UP(u.code)}${b?(two?' της καθέτου ιδιοκτησίας «'+b.code+'»':' ('+b.code+')'):''}: ${kind} (${String(u.type).toLowerCase()})`;
+  const flTxt=(p.units.some(x=>Number(x.floor||0)!==0)||p.calc.valueMode==='floor')?' '+floorPhrase(u.floor||0):'';
+  let t=`${UP(u.code)}${b?(two?' της καθέτου ιδιοκτησίας «'+b.code+'»':' ('+b.code+')'):''}: ${kind} (${String(u.type).toLowerCase()}${flTxt})`;
   if(parts.length) t+=', η οποία περιλαμβάνει '+parts.join(', ');
   t=t.replace(/\.$/,'');
   if(two) t+=`. Της αναλογεί ποσοστό ${fmt(cu.pmB,d)}‰ εξ αδιαιρέτου επί της καθέτου ιδιοκτησίας «${b.code}» και ποσοστό ${fmt(cu.pm,d)}‰ εξ αδιαιρέτου επί του όλου ${G[2]}, ήτοι ${fmt(cu.plot)} τ.μ.`;
   else t+=`. Της αναλογεί ποσοστό συνιδιοκτησίας ${fmt(cu.pm,d)}‰ εξ αδιαιρέτου επί του όλου ${G[2]}, ήτοι ${fmt(cu.plot)} τ.μ.`;
   const xs=p.excl.filter(x=>x.unit===u.id);
-  if(xs.length) t+=` Στην ιδιοκτησία αυτή παραχωρείται, ως παρακολούθημα, το δικαίωμα αποκλειστικής χρήσης ${exclText(xs)} του συνημμένου διαγράμματος.`;
+  if(xs.length) t+=` Στην ιδιοκτησία αυτή παραχωρείται, ως παρακολούθημα, το δικαίωμα αποκλειστικής χρήσης ${exclText(xs,b)} του συνημμένου διαγράμματος.`;
   const gs=p.groups.filter(g=>GU(p,g).includes(u.id));
-  if(gs.length) t+=' Συμμετέχει '+gs.map(g=>`στους κοινόχρηστους χώρους «${g.name}» και στις δαπάνες τους με ποσοστό ${fmt(c.grp[g.id].alloc[u.id],d)}‰`).join(' και ')+'.';
+  if(gs.length) t+=' Συμμετέχει '+gs.map(g=>g.items&&g.items.length?`στους κοινόχρηστους χώρους «${g.name}» και στις δαπάνες τους με ποσοστό ${fmt(c.grp[g.id].alloc[u.id],d)}‰`:`στις δαπάνες «${g.name}» με ποσοστό ${fmt(c.grp[g.id].alloc[u.id],d)}‰`).join(' και ')+'.';
   return t;
 }
 function buildingDescription(p,c,b){
@@ -829,13 +846,15 @@ function pdfDef(p,c,o){
     const st=[...head('ΠΙΝΑΚΑΣ ΚΟΙΝΟΧΡΗΣΤΩΝ ΧΩΡΩΝ ΚΑΙ ΚΑΤΑΝΟΜΗΣ ΔΑΠΑΝΩΝ')];
     p.groups.forEach(g=>{ const C=c.grp[g.id]; const uc=GU(p,g).map(id=>p.units.find(u=>u.id===id)).filter(Boolean);
       const alloc={table:{headerRows:2,widths:['*',60],body:[[H('ΑΝΑΛΟΓΙΑ ΔΑΠΑΝΩΝ ΕΠΙ ΚΟΙΝΟΧΡΗΣΤΩΝ',{colSpan:2}),{}],[H('ΙΔΙΟΚΤΗΣΙΕΣ'),H('‰')],...uc.map(u=>[L(u.code),N(C.alloc[u.id],d)]),[L('ΣΥΝΟΛΟ',{fillColor:'#f1f1f1'}),N(C.allocSum,d,{bold:true,fillColor:'#f1f1f1'})]]},layout:LAY,fontSize:7.5};
-      const note={text:'Κατανομή: '+(g.mode==='equal'?'ισόποσα μεταξύ των συμμετεχουσών ιδιοκτησιών':g.mode==='pm'?'κατ’ αναλογία των ποσοστών συνιδιοκτησίας':'κατά συμφωνία')+'.',fontSize:6.5,color:'#444444',margin:[0,3,0,0]};
+      const note={text:'Κατανομή: '+allocText(p,g)+'.'+(pilotisNote(p,c,g)?'\n'+pilotisNote(p,c,g):''),fontSize:6.5,color:'#444444',margin:[0,3,0,0]};
       const zones=[...new Set(g.items.map(x=>x.zone))];
-      const zt=zones.map(z=>{ const its=g.items.filter(x=>x.zone===z); const zl=z==='Υπαίθριος'?'':' '+UP(z==='Κτίριο'?'κτιρίου':z==='Υπόγειο'?'υπογείου':z==='Ισόγειο'?'ισογείου':'δώματος');
+      const zt=zones.map(z=>{ const its=g.items.filter(x=>x.zone===z); const zl=z==='Υπαίθριος'?'':' '+(ZONE_HEAD[z]||UP(z));
         return {table:{headerRows:2,dontBreakRows:true,widths:['36%',52,'*'],body:[[H(`ΑΝΑΛΥΣΗ ΚΟΙΝΟΧΡΗΣΤΩΝ ΧΩΡΩΝ${zl} (${uc.map(u=>u.code).join(', ')})`,{colSpan:3}),{},{}],[H('ΠΕΡΙΓΡΑΦΗ ΧΩΡΩΝ'),H('(m²)'),H('ΣΗΜΕΙΑ ΠΕΡΙΓΡΑΦΗΣ ΧΩΡΟΥ')],
           ...its.map(x=>[L(UP(x.name)),N(a2(x.area)),{text:x.boundary||'—',fontSize:6.5}]),[L('ΣΥΝΟΛΟ ΚΟΙΝΟΧΡΗΣΤΩΝ ΧΩΡΩΝ',{fillColor:'#f1f1f1'}),N(C.zone[z],2,{bold:true,fillColor:'#f1f1f1'}),{text:'',fillColor:'#f1f1f1'}]]},layout:LAY,fontSize:7.5,margin:[0,0,0,8]}; });
-      st.push({text:UP(g.name),bold:true,fontSize:8.5,margin:[0,8,0,5]});
-      st.push(g.items.length?{columns:[{width:'*',stack:zt},{width:220,stack:[alloc,note]}],columnGap:12}:{columns:[{width:260,stack:[alloc,note]},{width:'*',text:''}]});
+      // κάθε ομάδα μένει ενιαία στην ίδια σελίδα όταν χωράει (όχι «ορφανές» επικεφαλίδες στο τέλος σελίδας)
+      const blk=[{text:UP(g.name),bold:true,fontSize:8.5,margin:[0,8,0,5]},
+        g.items.length?{columns:[{width:'*',stack:zt},{width:220,stack:[alloc,note]}],columnGap:12}:{columns:[{width:260,stack:[alloc,note]},{width:'*',text:''}]}];
+      st.push(g.items.length+zones.length*3+uc.length<=28?{stack:blk,unbreakable:true}:{stack:blk});
     });
     st.push(sign()); secs.push(st);
   }
