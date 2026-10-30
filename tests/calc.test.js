@@ -90,7 +90,8 @@ describe('κτίρια — κάθετη και οριζόντια ιδιοκτη
         expect(us.reduce((a, u) => a + I(c.u[u.id].pmB), 0)).toBe(1000 * f);
         expect(us.reduce((a, u) => a + I(c.u[u.id].pm), 0)).toBe(I(B.pm));
         expect(us.reduce((a, u) => a + cents(c.u[u.id].plot), 0)).toBe(cents(B.plot));
-        us.forEach(u => expect(Math.abs(c.u[u.id].pm - B.pm * c.u[u.id].pmB / 1000)).toBeLessThanOrEqual(1 / f + 1e-9)); });
+        // ‰ επί του όλου ≈ ‰ κτιρίου × ‰ επί του κτιρίου (μέσα σε μία μονάδα + τη στρογγυλοποίηση του ‰ επί του κτιρίου)
+        us.forEach(u => expect(Math.abs(c.u[u.id].pm - B.pm * c.u[u.id].pmB / 1000)).toBeLessThanOrEqual(1.5 / f + 1e-9)); });
       expect(p.units.reduce((a, u) => a + cents(c.u[u.id].plot), 0)).toBe(cents(p.info.plotArea));
     }
   });
@@ -176,7 +177,8 @@ describe('σενάριο: δύο κτίρια διαφορετικού μεγέ�
   it('ποσοστά κτιρίων και ιδιοκτησιών όπως ο ανεξάρτητος υπολογισμός', () => {
     expect(p.buildings.map(b => c.b[b.id].pm)).toEqual([732.42, 267.58]);
     expect(p.buildings.map(b => c.b[b.id].plot)).toEqual([1098.63, 401.37]);
-    expect(['Α1', 'Α2', 'Α3', 'Α4', 'Α5', 'Β1', 'Β2'].map(k => cu(k).pm)).toEqual([155.65, 112.17, 155.65, 112.17, 196.78, 133.79, 133.79]);
+    // ακριβή: 155,6535 · 112,1716 · 155,6535 · 112,1716 · 196,7695 · 133,7902 · 133,7902 — μία στρογγυλοποίηση σε όλο το οικόπεδο, ίσα τα πανομοιότυπα
+    expect(['Α1', 'Α2', 'Α3', 'Α4', 'Α5', 'Β1', 'Β2'].map(k => cu(k).pm)).toEqual([155.66, 112.17, 155.66, 112.17, 196.76, 133.79, 133.79]);
     expect(['Α1', 'Α2', 'Α3', 'Α4', 'Α5'].map(k => cu(k).pmB)).toEqual([212.52, 153.15, 212.52, 153.15, 268.66]);
   });
   it('πανομοιότυπα διαμερίσματα: ίσα ‰, m² και ψήφοι', () => {
@@ -193,7 +195,7 @@ describe('σενάριο: δύο κτίρια διαφορετικού μεγέ�
     expect(c.grp.el.alloc[U['Β1'].id]).toBeUndefined();
   });
   it('πυλωτές: οι θέσεις δεν αφαιρούνται από τον ακάλυπτο· το ισοζύγιο κλείνει', () => {
-    expect(c.tot.park).toBe(87.5); expect(c.bal.park).toBe(0); expect(c.bal.pil).toBe(87.5); expect(c.bal.diff).toBe(0);
+    expect(c.tot.park).toBe(87.5); expect(c.bal.park).toBe(0); expect(c.bal.pil).toBe(87.5); expect(Math.abs(c.bal.diff)).toBe(0);
     expect(c.checks.filter(x => x.sev === 'err')).toEqual([]);
   });
 });
@@ -206,7 +208,7 @@ describe('πισίνα σε όροφο', async () => {
     const b = m.mkUnit(null, 'Β'); Object.assign(b, { floor: 5, main: 100, pool: 20 });
     p.units = [a, b]; p.groups = [{ id: 'g', name: 'Γ', all: true, units: [], mode: 'pm', manual: {}, items: [{ id: 'i', name: 'Ακάλυπτος', zone: 'Υπαίθριος', area: 370 }] }];
     const c = m.compute(p);
-    expect(c.bal.pools).toBe(30); expect(c.bal.roofPools).toBe(20); expect(c.bal.diff).toBe(0);
+    expect(c.bal.pools).toBe(30); expect(c.bal.roofPools).toBe(20); expect(Math.abs(c.bal.diff)).toBe(0);
   });
 });
 
@@ -226,5 +228,31 @@ describe('όγκος με ύψος υπογείου', async () => {
   it('χωρίς ύψος υπογείου χρησιμοποιείται το ύψος ορόφων', () => {
     const p = m.blankProject(); m.upgrade(p); Object.assign(p.calc, { basis: 'volume', defHeight: 3.10 });
     expect(m.baseHeightOf(p)).toBe(3.10);
+  });
+});
+
+describe('Παλαιό Φάληρο, Ταξιαρχών 2: ίδια νούμερα με τον χειρόγραφο πίνακα αναλογισμού όγκων', async () => {
+  const m = await import('../src/core.js');
+  const { readFileSync } = await import('node:fs');
+  const p = JSON.parse(readFileSync(new URL('./faliro-taxiarxon.json', import.meta.url), 'utf8'));
+  const c = m.compute(p);
+  // από τον πίνακα: ‰ οικοπέδου, m², ανελκυστήρας ‰, κοινόχρηστα κτιρίου ‰, ψήφοι, μικτή επιφάνεια, όγκος ιδιοκτησίας, κοινά οικοπέδου ‰
+  const PDF = {
+    'ΚΤΙΡΙΟ Α': { 'ΥΠ-8': [6.59, 4.58, 12.74, 28.67, 7, 24.28, 63.16, 14.14], 'ΥΠ-9': [5.29, 3.68, 10.23, 23.01, 5, 19.48, 50.69, 11.35], '1.Α': [51.68, 35.95, 95.38, 113.60, 52, 89.06, 250.22, 56.03], '2.Α': [53.75, 37.38, 103.88, 112.72, 54, 89.73, 248.28, 55.59], '2.Β': [39.87, 27.73, 77.05, 85.20, 40, 65.37, 187.66, 42.02], '3.Α': [56.38, 39.21, 113.43, 114.03, 56, 90.56, 251.18, 56.24], '3.Β': [41.55, 28.90, 83.56, 85.15, 42, 65.97, 187.55, 42.00], '4.Α': [100.13, 69.64, 209.01, 191.36, 100, 157.94, 421.50, 94.38], '5.Α': [138.51, 96.34, 294.72, 246.26, 138, 212.42, 542.42, 121.46] },
+    'ΚΤΙΡΙΟ Β': { 'ΥΠ-8': [7.37, 5.13, 13.90, 31.21, 7, 27.10, 70.64, 15.82], 'ΥΠ-9': [5.32, 3.70, 10.03, 22.51, 5, 19.55, 50.95, 11.41], '1.Α': [53.97, 37.54, 97.17, 114.85, 54, 93.21, 259.93, 58.20], '2.Α': [56.22, 39.10, 106.01, 114.76, 56, 93.51, 259.73, 58.16], '2.Β': [39.92, 27.77, 75.28, 83.65, 40, 64.78, 189.31, 42.39], '3.Α': [58.68, 40.81, 115.23, 114.92, 59, 94.35, 260.10, 58.24], '3.Β': [41.64, 28.96, 81.68, 83.80, 42, 65.36, 189.66, 42.47], '4.Α': [102.44, 71.25, 208.63, 190.28, 102, 161.15, 430.65, 96.43], '5.Α': [140.69, 97.85, 292.07, 244.02, 141, 214.62, 552.29, 123.67] } };
+  const gen = p.groups.find(g => g.all);
+  for (const b of p.buildings) {
+    const el = p.groups.find(g => g.bld === b.id && g.mode === 'elevator'), cm = p.groups.find(g => g.bld === b.id && g.mode === 'volume');
+    it(`${b.code}: ‰, m², κοινόχρηστα, ψήφοι, μικτή, όγκοι — ακριβώς· ανελκυστήρας ±0,01`, () => {
+      for (const [code, v] of Object.entries(PDF[b.code])) {
+        const u = p.units.find(x => x.bld === b.id && x.code === code), r = c.u[u.id];
+        expect([code, r.pm, r.plot, c.grp[cm.id].alloc[u.id], r.votes, r.mixed, r.volOwn, c.grp[gen.id].alloc[u.id]]).toEqual([code, v[0], v[1], v[3], v[4], v[5], v[6], v[7]]);
+        expect(Math.abs(c.grp[el.id].alloc[u.id] - v[2])).toBeLessThanOrEqual(0.0100001);
+      }
+    });
+  }
+  it('σύνολα: κτίρια 493,75 / 506,25 ‰, 343,41 / 352,11 m², κοινόχρηστοι όγκοι 512,52 / 516,95 m³', () => {
+    expect(p.buildings.map(b => [c.b[b.id].pm, c.b[b.id].plot, c.vb[b.id].comVol, c.vb[b.id].own])).toEqual([[493.75, 343.41, 512.52, 2202.66], [506.25, 352.11, 516.95, 2263.26]]);
+    expect(c.pmSum).toBe(1000); expect(c.tot.plot).toBe(695.52); expect(Math.abs(c.bal.diff)).toBe(0);
   });
 });

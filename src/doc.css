@@ -25,3 +25,9 @@
 .doc .descr p.bld{font-weight:700;margin-top:14px}
 .doc .notes{font-size:9px;margin-top:8px}
 .doc .notes ol{margin:2px 0 0 16px;padding:0}
+/* αναλυτικός πίνακας όγκων */
+.doc-vol table{font-size:8px;margin-bottom:6px}
+.doc-vol th,.doc-vol td{padding:2px 3px}
+.doc-vol td.lbl{text-transform:none;font-weight:500;white-space:normal}
+.doc-vol tr.com td{background:#e4e4e4}
+.doc-vol tr.hdr td{font-weight:700}

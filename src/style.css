@@ -82,10 +82,14 @@ details.menu .pop hr{border:0;border-top:1px solid var(--line);margin:4px 0}
 .fig.bad b{color:var(--err)} .fig.good b{color:var(--ok)}
 
 /* tabs */
-.tabs{display:flex;gap:2px;overflow-x:auto;border-bottom:1px solid var(--line);scrollbar-width:thin}
-.tabs a{padding:9px 13px;text-decoration:none;color:var(--muted);font-weight:500;font-size:13.5px;border-bottom:2px solid transparent;white-space:nowrap;display:flex;gap:6px;align-items:center}
-.tabs a:hover{color:var(--ink)}
-.tabs a[aria-current="page"]{color:var(--accent);border-bottom-color:var(--accent)}
+/* γραμμή καρτελών: σκούρο μπλε με λευκά γράμματα */
+.tabs{display:flex;gap:2px;overflow-x:auto;background:#12305c;border-radius:var(--r);padding:4px;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.35) transparent}
+.tabs a{padding:8px 13px;text-decoration:none;color:#ffffff;font-weight:500;font-size:13.5px;border-radius:calc(var(--r) - 2px);border-bottom:2px solid transparent;white-space:nowrap;display:flex;gap:6px;align-items:center;opacity:.86}
+.tabs a:hover{opacity:1;background:rgba(255,255,255,.10)}
+.tabs a:focus-visible{outline:2px solid #ffffff;outline-offset:-2px}
+.tabs a[aria-current="page"]{opacity:1;background:rgba(255,255,255,.18);border-bottom-color:#ffffff;font-weight:600}
+.tabs .badge{background:rgba(255,255,255,.2);color:#ffffff}
+.tabs .badge.err{background:#f9e2df;color:#b3261e} .tabs .badge.warn{background:#fbefd6;color:#8f5d00} .tabs .badge.ok{background:#e0f1e6;color:#2c7a4c}
 .badge{font-size:11px;padding:1px 6px;border-radius:9px;font-weight:600;background:var(--sunk);color:var(--muted)}
 .badge.err{background:var(--err-soft);color:var(--err)} .badge.warn{background:var(--warn-soft);color:var(--warn)} .badge.ok{background:var(--ok-soft);color:var(--ok)}
 
