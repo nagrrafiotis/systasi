@@ -182,6 +182,15 @@ function showConfigError() {
 /* ---------- ιστορικό εκδόσεων & διαγραμμένα ---------- */
 function openDialog(title, html) { const d = $('#dlg'); $('#dlgTitle').textContent = title; $('#dlgBody').innerHTML = html; if (!d.open) d.showModal(); return d; }
 const dt = s => { try { return new Date(s).toLocaleString('el-GR', { dateStyle: 'short', timeStyle: 'short' }); } catch (e) { return s; } };
+function renameDialog() {
+  const p = S.p; if (!p) return;
+  const d = openDialog('Μετονομασία έργου', `<form id="renForm" class="sect" style="gap:12px">
+    <label class="f"><span>Ονομασία έργου</span><input type="text" id="renName" class="wide" maxlength="300" value="${esc(p.info.name || '')}" required></label>
+    <div class="row" style="justify-content:flex-end;gap:8px"><button type="button" class="btn ghost" data-dlg-close>Άκυρο</button><button type="submit" class="btn primary">Αποθήκευση</button></div></form>`);
+  const inp = $('#renName'); inp.focus(); inp.select();
+  $('#renForm').addEventListener('submit', ev => { ev.preventDefault(); const v = inp.value.trim(); if (!v) { inp.focus(); return; }
+    S.p.info.name = v; d.close(); scheduleSave(); renderAll(); fillProjSel(); toast('Το έργο μετονομάστηκε'); });
+}
 async function showHistory() {
   const p = S.p;
   if (!S.projects.has(p.id)) { toast('Το έργο δεν έχει αποθηκευτεί ακόμη.'); return; }
@@ -932,6 +941,7 @@ document.addEventListener('click',ev=>{
   $$('details.menu[open]').forEach(d=>d.open=false);
   const re=()=>{ const y=window.scrollY; scheduleSave(); renderAll(); window.scrollTo(0,y); };
   switch(a){
+    case 'rename': renameDialog(); break;
     case 'new-blank': openProject(blankProject(),true); break;
     case 'new-sample': { const s=sampleProject(); delete s.sample; s.info.name='Έργο από παράδειγμα'; openProject(s,true); break; }
     case 'import': $('#fileIn').click(); break;

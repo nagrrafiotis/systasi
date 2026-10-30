@@ -20,6 +20,7 @@
     </div>
     <div class="projbar">
       <select id="projSel" aria-label="Έργο"></select>
+      <button type="button" class="btn ghost" data-act="rename" title="Μετονομασία έργου" aria-label="Μετονομασία έργου">✎</button>
       <details class="menu" id="menuNew">
         <summary class="btn">Νέο έργο</summary>
         <div class="pop">
@@ -32,6 +33,7 @@
         <summary class="btn" aria-label="Ενέργειες έργου">⋯</summary>
         <div class="pop">
           <div class="who" id="who"></div>
+          <button type="button" data-act="rename">Μετονομασία έργου</button>
           <button type="button" data-act="dup">Διπλότυπο έργου</button>
           <button type="button" data-act="backup">Αντίγραφο ασφαλείας έργου (.json)</button>
           <button type="button" data-act="backup-all">Εξαγωγή όλων των έργων (.json)</button>

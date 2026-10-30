@@ -89,6 +89,12 @@ async def main():
     d=await dl.value; path=OUT+'/out.xlsx'; await d.save_as(path)
     check('λήψη Excel', open(path,'rb').read(2)==b'PK')
     # αποσύνδεση
+    # μετονομασία έργου από το κουμπί ✎
+    await pg.click('.projbar [data-act=rename]'); await pg.wait_for_timeout(200)
+    await pg.fill('#renName','Πολυκατοικία Καλαμαριάς'); await pg.click('#renForm [type=submit]'); await pg.wait_for_timeout(1300)
+    sel=await pg.evaluate("document.querySelector('#projSel').selectedOptions[0].textContent")
+    pr=[x for x in (await fakedb(pg))['projects'] if x['data']['info']['name']=='Πολυκατοικία Καλαμαριάς']
+    check('μετονομασία: νέο όνομα στη λίστα και στη βάση', 'Πολυκατοικία Καλαμαριάς' in sel and len(pr)==1 and pr[0]['name']=='Πολυκατοικία Καλαμαριάς')
     await pg.click('#menuMore summary'); await pg.click('[data-act=logout]'); await pg.wait_for_timeout(600)
     check('αποσύνδεση: ξανά οθόνη σύνδεσης', await pg.is_visible('#auth'))
     # δεύτερος χρήστης δεν βλέπει τίποτα
