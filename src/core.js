@@ -29,6 +29,8 @@ function levelFloor(u,name){ const uf=Number(u.floor||0);
   if(name==='Όροφος') return uf>=1?uf:1; if(name==='Σοφίτα'){ const fs=(u.levels||[]).map(l=>l.name).filter(n=>n!=='Σοφίτα'&&n!=='Πατάρι').map(n=>levelFloor(u,n)); return fs.length?Math.max(...fs)+1:uf+1; }
   return uf; }
 function heightOf(p,u){ const h=num(u.height); return h!=null?h:(num(p.calc.defHeight)??3); }
+/** Ύψος υπογείου για τον όγκο υπόγειων βοηθητικών χώρων (αποθηκών) και δεξαμενών· αν λείπει, το ύψος ορόφων. */
+function baseHeightOf(p){ return num(p.calc.baseHeight)??num(p.calc.defHeight)??3; }
 /** Κατανομή με κλειδωμένες τιμές: όσες έχουν τιμή την κρατούν, οι υπόλοιπες μοιράζονται το υπόλοιπο αναλογικά με το βάρος τους. */
 function distribute(weights,fixed,total,dec){
   const f=10**dec, fx=fixed.map(v=>v==null?null:Math.round(v*f)/f);
@@ -209,9 +211,11 @@ function compute(p){
   const co=p.calc.coef||{}, vm=p.calc.valueMode==='floor', vol=p.calc.basis==='volume';
   const w=p.units.map(u=>{ const r=c.u[u.id], vc=f=>vm?valueCoef(p,f):1, uf=u.floor||0;
     const mainT=(vm&&u.levels&&u.levels.length)?u.levels.reduce((a,l)=>a+nz(a2(l.area))*vc(levelFloor(u,l.name)),0):nz(r.main)*vc(uf);
-    const H=vol?heightOf(p,u):1;
+    const H=vol?heightOf(p,u):1, Hb=vol?baseHeightOf(p):1;
     r.height=heightOf(p,u); r.vol=r2(nz(r.main)*r.height); r.vcoef=vm?vc(uf):null; r.floor=uf;
-    return nz(num(u.adj)??1)*H*(nz(co.main)*mainT+nz(co.semi)*nz(r.semi)*vc(uf)+(nz(co.base)*nz(r.base)+nz(co.tanks)*nz(r.tanks))*vc(-1)+(nz(co.pool)*nz(r.pool)+nz(co.excl)*nz(r.excl)+nz(co.park)*nz(r.park))*vc(0)); });
+    r.volBase=(r.base||r.tanks)?r2((nz(r.base)+nz(r.tanks))*baseHeightOf(p)):null;
+    // όγκος: κύριοι/ημιυπαίθριοι × ύψος ιδιοκτησίας, υπόγειοι χώροι × ύψος υπογείου
+    return nz(num(u.adj)??1)*(H*(nz(co.main)*mainT+nz(co.semi)*nz(r.semi)*vc(uf)+(nz(co.pool)*nz(r.pool)+nz(co.excl)*nz(r.excl)+nz(co.park)*nz(r.park))*vc(0))+Hb*(nz(co.base)*nz(r.base)+nz(co.tanks)*nz(r.tanks))*vc(-1)); });
   p.units.forEach((u,i)=>c.u[u.id].w=w[i]);
   const fixedOf=u=>p.calc.mode==='auto'?num(u.pmFixed):null;
   const rnd=v=>v==null?null:Math.round(v*f)/f;
@@ -269,11 +273,11 @@ function compute(p){
     }
   }
   // κτίρια σε απλή σύσταση: ομαδοποίηση με υποσύνολα
-  Object.values(c.b).forEach(B=>{ ['main','semi','base','pool','tanks','vol'].forEach(k=>B['u_'+k]=r2(B.units.reduce((a,id)=>a+nz(c.u[id][k]),0)));
+  Object.values(c.b).forEach(B=>{ ['main','semi','base','pool','tanks','vol','volBase'].forEach(k=>B['u_'+k]=r2(B.units.reduce((a,id)=>a+nz(c.u[id][k]),0)));
     B.u_excl=r2(B.units.reduce((a,id)=>a+nz(c.u[id].excl),0)); B.u_park=r2(B.units.reduce((a,id)=>a+nz(c.u[id].park),0));
     if(!c.two){ B.pm=B.units.length?Math.round(B.units.reduce((a,id)=>a+nz(c.u[id].pm),0)*f)/f:null; B.plot=B.units.length?r2(B.units.reduce((a,id)=>a+nz(c.u[id].plot),0)):null; } });
   // totals
-  ['main','semi','base','pool','tanks','vol','excl','park','parkOut','roof','plot'].forEach(k=>c.tot[k]=r2(p.units.reduce((a,u)=>a+nz(c.u[u.id][k]),0)));
+  ['main','semi','base','pool','tanks','vol','volBase','excl','park','parkOut','roof','plot'].forEach(k=>c.tot[k]=r2(p.units.reduce((a,u)=>a+nz(c.u[u.id][k]),0)));
   const bl=Object.values(c.b); ['excl','park','parkOut','roof'].forEach(k=>{ c.tot['u_'+k]=c.tot[k]; c.tot[k]=r2(c.tot[k]+bl.reduce((a,B)=>a+nz(B[k]),0)); });
   // common groups
   c.commonCol={main:0,semi:0,base:0,pool:0,tanks:0}; c.commonOut=0; c.commonAll=0;
@@ -365,4 +369,4 @@ function runChecks(p,c){
   return L;
 }
 
-export { FLOORS, floorName, valueCoef, elevCoef, heatCoef, levelFloor, heightOf, distribute, holder, twoLevel, upgrade, mkBuilding, BLD_PREFIX, AREA_COLS, KINDS, UNIT_TYPES, LEVELS, ZONES, REGIMES, PLOT_TYPES, AREAS_ZONE, TABS, DEFAULT_ENG, $, $$, esc, clone, num, nz, r2, fmt, a2, fin, UP, apportion, normPt, parseRings, parsePoints, ringsArea, ringOpen, blankProject, GU, mkUnit, sampleProject, unitMain, compute, runChecks };
+export { FLOORS, floorName, valueCoef, elevCoef, heatCoef, levelFloor, heightOf, baseHeightOf, distribute, holder, twoLevel, upgrade, mkBuilding, BLD_PREFIX, AREA_COLS, KINDS, UNIT_TYPES, LEVELS, ZONES, REGIMES, PLOT_TYPES, AREAS_ZONE, TABS, DEFAULT_ENG, $, $$, esc, clone, num, nz, r2, fmt, a2, fin, UP, apportion, normPt, parseRings, parsePoints, ringsArea, ringOpen, blankProject, GU, mkUnit, sampleProject, unitMain, compute, runChecks };

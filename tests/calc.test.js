@@ -209,3 +209,22 @@ describe('πισίνα σε όροφο', async () => {
     expect(c.bal.pools).toBe(30); expect(c.bal.roofPools).toBe(20); expect(c.bal.diff).toBe(0);
   });
 });
+
+describe('όγκος με ύψος υπογείου', async () => {
+  const m = await import('../src/core.js');
+  it('κύριοι × ύψος ορόφων, αποθήκη × ύψος υπογείου', () => {
+    const p = m.blankProject(); m.upgrade(p);
+    Object.assign(p.calc, { basis: 'volume', defHeight: 3.10, baseHeight: 2.90 }); p.calc.coef.base = 0.5;
+    const a = m.mkUnit(null, 'Α'); Object.assign(a, { floor: 1, main: 100, base: 20 });
+    const b = m.mkUnit(null, 'Β'); Object.assign(b, { floor: 2, main: 50, base: 10, height: 3.40 });
+    p.units = [a, b];
+    const c = m.compute(p);
+    expect(c.u[a.id].w).toBeCloseTo(100 * 3.10 + 0.5 * 20 * 2.90, 9);
+    expect(c.u[b.id].w).toBeCloseTo(50 * 3.40 + 0.5 * 10 * 2.90, 9);
+    expect(c.u[a.id].vol).toBe(310); expect(c.u[a.id].volBase).toBe(58); expect(c.tot.volBase).toBe(87);
+  });
+  it('χωρίς ύψος υπογείου χρησιμοποιείται το ύψος ορόφων', () => {
+    const p = m.blankProject(); m.upgrade(p); Object.assign(p.calc, { basis: 'volume', defHeight: 3.10 });
+    expect(m.baseHeightOf(p)).toBe(3.10);
+  });
+});
