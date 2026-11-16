@@ -400,14 +400,17 @@ function structRow(p,b){
   const rows=bldFloors(p,b).map(f=>{ const L=at(f); return `<tr><td>${esc(floorName(f))}</td>
      <td class="n"><input type="text" class="n" inputmode="numeric" id="bf-${b.id}-${f}" data-coll="bf" data-id="${esc(b.id)}" data-field="${f}" value="${L.length}" aria-label="Ιδιοκτησίες: ${esc(floorName(f))}" style="width:64px"></td>
      <td class="hint">${L.length?L.map(u=>esc(u.code||'—')).join(' · '):'—'}</td></tr>`; }).join('');
+  const chips=p.units.map(u=>{ const o=bOf(p,u), mine=u.bld===b.id;
+    return `<label class="chip"><input type="checkbox" data-coll="bu" data-id="${esc(b.id)}" data-field="${esc(u.id)}" ${mine?'checked':''}> ${esc(u.code||'—')}${!mine&&o?` <span class="hint">(${esc(bShort(o))})</span>`:''}</label>`; }).join('');
   return `<tr class="detail"><td colspan="7"><div class="sect" style="gap:10px">
+    ${p.units.length?`<div><div class="hint" style="margin-bottom:6px"><b>Ποιες ιδιοκτησίες ανήκουν στο ${esc(b.code||'κτίριο')}:</b> τσέκαρε για να προσθέσεις μια υπάρχουσα ιδιοκτησία, ξετσέκαρε για να τη βγάλεις από το κτίριο. Δεν διαγράφεται τίποτα· όσες βγουν μένουν «χωρίς κτίριο». Σε παρένθεση το κτίριο όπου ανήκουν τώρα.</div><div class="chipset">${chips}</div></div>`:''}
     <div class="row" style="gap:14px;align-items:flex-end">
       <label class="f"><span>Όροφοι πάνω από το ισόγειο</span>${SEL('b',b.id,'top',[[0,'Κανένας — μόνο ισόγειο'],...[1,2,3,4,5,6,7,8].map(n=>[n,String(n)])],bldTop(p,b))}</label>
       <label class="f"><span>Υπόγεια</span>${SEL('b',b.id,'low',[[0,'Χωρίς υπόγειο'],[1,'1 υπόγειο'],[2,'2 υπόγεια']],bldLow(p,b))}</label>
     </div>
     <div class="tscroll"><table class="dt" style="max-width:640px"><thead><tr><th>Στάθμη</th><th class="n">Ιδιοκτησίες</th><th>Ονομασίες</th></tr></thead>
     <tbody>${rows}<tr class="tot"><td>Σύνολο ${esc(b.code||'κτιρίου')}</td><td class="n">${us.length}</td><td></td></tr></tbody></table></div>
-    <p class="hint">Γράψε πόσες ιδιοκτησίες έχει κάθε στάθμη και πάτα Enter (ή βγες από το πεδίο): οι γραμμές μπαίνουν στον πίνακα «Ιδιοκτησίες» από κάτω, έτοιμες για εμβαδά. Όταν μειώνεις τον αριθμό, αφαιρούνται μόνο κενές ιδιοκτησίες· όσες έχουν στοιχεία σβήνονται από το ✕ της γραμμής τους. Οι όροφοι και τα υπόγεια δεν μειώνονται κάτω από τη στάθμη που έχει ήδη ιδιοκτησίες.</p>
+    <p class="hint">Για νέες ιδιοκτησίες: γράψε πόσες έχει κάθε στάθμη και πάτα Enter (ή βγες από το πεδίο): οι γραμμές μπαίνουν στον πίνακα «Ιδιοκτησίες» από κάτω, έτοιμες για εμβαδά. Όταν μειώνεις τον αριθμό, αφαιρούνται μόνο κενές ιδιοκτησίες· όσες έχουν στοιχεία σβήνονται από το ✕ της γραμμής τους. Οι όροφοι και τα υπόγεια δεν μειώνονται κάτω από τη στάθμη που έχει ήδη ιδιοκτησίες.</p>
   </div></td></tr>`;
 }
 function buildingsPanel(){
@@ -1024,6 +1027,7 @@ function applyInput(el){
   else if(coll==='p') p[field]=v;
   else if(coll==='u'){ const u=p.units.find(u=>u.id===id); if(u) u[field]=field==='floor'?Number(v):v; if(field==='type'||field==='bld'||field==='floor') return 'hard'; }
   else if(coll==='b'){ const b=p.buildings.find(b=>b.id===id); if(b) b[field]=(field==='top'||field==='low')?Number(v):v; if(field==='code') return 'soft'; }
+  else if(coll==='bu'){ const u=p.units.find(u=>u.id===field); if(u) u.bld=el.checked?id:(u.bld===id?'':u.bld); S.open.add(BLD_PREFIX+id); return 'hard'; }
   else if(coll==='lv'){ const [uid_,ix]=id.split('|'); const u=p.units.find(u=>u.id===uid_); if(u&&u.levels[ix]) u.levels[ix][field]=v; if(field==='name') return 'hard'; }
   else if(coll==='x'){ const x=p.excl.find(x=>x.id===id); if(x) x[field]=v; }
   else if(coll==='g'){ const g=p.groups.find(g=>g.id===id); if(g) g[field]=v; }

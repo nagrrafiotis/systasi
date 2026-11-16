@@ -93,6 +93,13 @@ async def main():
     # αλλαγή κτιρίου απευθείας από τη γραμμή
     await pg.select_option(f'#u-{ua[3]}-bld',bids[0]); await pg.wait_for_timeout(350)
     check('αλλαγή κτιρίου από τη γραμμή της ιδιοκτησίας', (await pg.input_value(f'#bf-{b3id}-2'))=='0' and (await pg.input_value(f'#u-{ua[3]}-bld'))==bids[0])
+    # προσθήκη / αφαίρεση υπάρχουσας ιδιοκτησίας από το ίδιο το κτίριο
+    cb=f'input[data-coll=bu][data-id="{b3id}"][data-field="{ua[3]}"]'
+    await pg.check(cb); await pg.wait_for_timeout(350)
+    check('τσεκ στο κτίριο: η ιδιοκτησία μπαίνει σε αυτό', (await pg.input_value(f'#u-{ua[3]}-bld'))==b3id and (await pg.input_value(f'#bf-{b3id}-2'))=='1')
+    await pg.uncheck(cb); await pg.wait_for_timeout(350)
+    check('ξετσέκαρισμα: βγαίνει από το κτίριο χωρίς να διαγραφεί', (await pg.input_value(f'#u-{ua[3]}-bld'))=='' and await pg.locator(f'#u-{ua[3]}-code').count()==1 and await pg.locator(cb).count()==1)
+    await pg.check(cb); await pg.wait_for_timeout(350)
     await pg.reload(); await pg.wait_for_timeout(1200)
     check('η διάρθρωση αποθηκεύτηκε', await pg.locator(f'#u-{ua[1]}-code').count()==1 and await pg.locator(f'#u-{ua[0]}-code').count()==1)
     check('χωρίς σφάλματα JavaScript', not errs)
