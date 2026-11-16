@@ -1,6 +1,6 @@
 // Οι αριθμοί που πάνε στη συμβολαιογράφο: αθροίσματα, στρογγυλοποίηση, ισοζύγιο.
 import { describe, it, expect } from 'vitest';
-import { num, fmt, compute, blankProject, mkUnit, sampleProject } from '../src/core.js';
+import { num, fmt, compute, blankProject, mkUnit, sampleProject, mkBuilding, bldFloors, bldTop, bldLow, setFloorCount, unitEmpty, bumpCode } from '../src/core.js';
 
 const cents = v => Math.round(v * 100);
 let seed = 12345; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
@@ -254,5 +254,46 @@ describe('Παλαιό Φάληρο, Ταξιαρχών 2: ίδια νούμερ
   it('σύνολα: κτίρια 493,75 / 506,25 ‰, 343,41 / 352,11 m², κοινόχρηστοι όγκοι 512,52 / 516,95 m³', () => {
     expect(p.buildings.map(b => [c.b[b.id].pm, c.b[b.id].plot, c.vb[b.id].comVol, c.vb[b.id].own])).toEqual([[493.75, 343.41, 512.52, 2202.66], [506.25, 352.11, 516.95, 2263.26]]);
     expect(c.pmSum).toBe(1000); expect(c.tot.plot).toBe(695.52); expect(Math.abs(c.bal.diff)).toBe(0);
+  });
+});
+
+describe('διάρθρωση κτιρίου: όροφοι και ιδιοκτησίες ανά στάθμη', () => {
+  const mk = () => { const p = blankProject(); p.units = []; const a = mkBuilding('ΚΤΙΡΙΟ Α'), b = mkBuilding('ΚΤΙΡΙΟ Β'); p.buildings = [a, b]; return { p, a, b }; };
+  const codes = (p, b) => p.units.filter(u => u.bld === b.id).map(u => u.code);
+  it('προσθέτει ιδιοκτησίες ανά στάθμη με ονομασίες «όροφος.γράμμα» και αποθήκες στο υπόγειο', () => {
+    const { p, a } = mk(); a.top = 2; a.low = 1;
+    expect(bldFloors(p, a)).toEqual([2, 1, 0, -1]);
+    expect(setFloorCount(p, a.id, 1, 2)).toEqual({ added: 2, removed: 0, kept: 0 });
+    setFloorCount(p, a.id, 2, 1); setFloorCount(p, a.id, -1, 2);
+    expect(codes(p, a)).toEqual(['ΥΠ-1', 'ΥΠ-2', '1.Α', '1.Β', '2.Α']);
+    expect(p.units.find(u => u.code === 'ΥΠ-1').type).toBe('Αποθήκη');
+    expect(p.units.every(u => u.bld === a.id)).toBe(true);
+    expect(p.units.map(u => u.floor)).toEqual([-1, -1, 1, 1, 2]);
+  });
+  it('ίδιες ονομασίες επιτρέπονται σε άλλο κτίριο, ενώ το «ΚΑΤΟΙΚΙΑ n» συνεχίζει σε όλο το έργο', () => {
+    const { p, a, b } = mk();
+    setFloorCount(p, a.id, 1, 1); setFloorCount(p, b.id, 1, 1);
+    expect(codes(p, a)).toEqual(['1.Α']); expect(codes(p, b)).toEqual(['1.Α']);
+    const q = mk(); const u = mkUnit('u1', 'ΚΑΤΟΙΚΙΑ 1'); u.bld = q.a.id; u.main = 100; q.p.units = [u];
+    setFloorCount(q.p, q.a.id, 0, 2); setFloorCount(q.p, q.b.id, 0, 2);
+    expect(q.p.units.map(x => x.code)).toEqual(['ΚΑΤΟΙΚΙΑ 1', 'ΚΑΤΟΙΚΙΑ 2', 'ΚΑΤΟΙΚΙΑ 3', 'ΚΑΤΟΙΚΙΑ 4']);
+    expect(q.p.units[2].type).toBe('Κατοικία');
+  });
+  it('η μείωση αφαιρεί μόνο κενές ιδιοκτησίες και ποτέ όσες έχουν στοιχεία', () => {
+    const { p, a } = mk(); setFloorCount(p, a.id, 1, 3);
+    p.units[0].main = 80;
+    expect(setFloorCount(p, a.id, 1, 0)).toEqual({ added: 0, removed: 2, kept: 1 });
+    expect(codes(p, a)).toEqual(['1.Α']);
+    p.units[0].main = null; p.excl.push({ id: 'x', unit: p.units[0].id, kind: 'garden', area: 10, boundary: '' });
+    expect(unitEmpty(p, p.units[0])).toBe(false);
+    expect(setFloorCount(p, a.id, 1, 0).kept).toBe(1);
+  });
+  it('οι όροφοι δεν πέφτουν κάτω από τη στάθμη που έχει ιδιοκτησίες και τα χιλιοστά κλείνουν', () => {
+    const { p, a, b } = mk(); p.info.regime = 'kathoriz'; p.info.plotArea = 1000;
+    setFloorCount(p, a.id, 3, 1); a.top = 1;
+    expect(bldTop(p, a)).toBe(3); expect(bldLow(p, a)).toBe(0);
+    setFloorCount(p, b.id, 0, 2); p.units.forEach((u, i) => u.main = 50 + i * 10);
+    const c = compute(p); expect(c.pmSum).toBe(1000);
+    expect(bumpCode('ΥΠ-9')).toBe('ΥΠ-10'); expect(bumpCode('2.Α')).toBe('2.Β'); expect(bumpCode('ΣΟΦΙΤΑ')).toBe(null);
   });
 });

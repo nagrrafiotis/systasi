@@ -153,6 +153,55 @@ function upgrade(p){
   return p;
 }
 function mkUnit(id,code){return {id:id||uid(),code:code||'',type:'Κατοικία',bld:'',floor:0,height:null,pmFixed:null,levels:[],main:null,semi:null,base:null,pool:null,tanks:null,pmManual:null,adj:1,descr:''};}
+/* ---------- διάρθρωση κτιρίου: όροφοι και ιδιοκτησίες ανά στάθμη ---------- */
+const bldUnits=(p,b)=>p.units.filter(u=>u.bld===b.id);
+/** Όροφοι πάνω από το ισόγειο: ο δηλωμένος αριθμός, ποτέ λιγότεροι από όσους έχουν ήδη ιδιοκτησίες. */
+function bldTop(p,b){ const fs=bldUnits(p,b).map(u=>Number(u.floor||0)); return Math.min(8,Math.max(0,Math.round(num(b.top)??0),...fs)); }
+/** Υπόγεια (0, 1 ή 2), με την ίδια λογική. */
+function bldLow(p,b){ const fs=bldUnits(p,b).map(u=>-Number(u.floor||0)); return Math.min(2,Math.max(0,Math.round(num(b.low)??0),...fs)); }
+/** Στάθμες του κτιρίου από την ψηλότερη προς τη χαμηλότερη, όπως σε τομή. */
+function bldFloors(p,b){ const r=[]; for(let f=bldTop(p,b);f>=-bldLow(p,b);f--) r.push(f); return r; }
+const GL='ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ';
+/** Επόμενη ονομασία στη σειρά: «ΚΑΤΟΙΚΙΑ 3» → «ΚΑΤΟΙΚΙΑ 4», «ΥΠ-9» → «ΥΠ-10», «2.Α» → «2.Β». */
+function bumpCode(code){ code=String(code||'').trim(); let m=code.match(/^(.*?)(\d+)$/); if(m) return m[1]+(Number(m[2])+1);
+  m=code.match(/^(.*[\s.\-])([Α-Ω])$/); if(m){ const i=GL.indexOf(m[2]); if(i>=0&&i<GL.length-1) return m[1]+GL[i+1]; } return null; }
+const DOTTED=/^(\d+|ΙΣ)\.[Α-Ω]$/;
+/** Ονομασία για νέα ιδιοκτησία στη στάθμη f του κτιρίου b, στο ύφος που έχουν ήδη οι ονομασίες του έργου. */
+function unitCodeFor(p,b,f){ f=Number(f);
+  const inB=bldUnits(p,b), fl=u=>Number(u.floor||0), same=inB.filter(u=>fl(u)===f), last=a=>a[a.length-1];
+  let code=null, wide=false;
+  if(same.length) code=bumpCode(last(same).code);
+  if(!code&&f<0){ const st=inB.filter(u=>fl(u)<0); code=(st.length&&bumpCode(last(st).code))||'ΥΠ-1'; }
+  if(!code){ const up=inB.filter(u=>fl(u)>=0), all=p.units.filter(u=>fl(u)>=0), NUMBERED=/\s\d+$/;
+    // μέσα στο κτίριο συνεχίζει τη σειρά του («Α2» → «Α3»)· από άλλο κτίριο δανείζεται μόνο το ύφος «ΚΑΤΟΙΚΙΑ n»
+    if(up.length&&!up.some(u=>DOTTED.test(String(u.code).trim()))) code=bumpCode(last(up).code);
+    else if(!up.length&&all.length&&NUMBERED.test(String(last(all).code).trim())) code=bumpCode(String(last(all).code).trim());
+    if(!code) code=(f===0?'ΙΣ':f)+'.Α'; }
+  // «ΚΑΤΟΙΚΙΑ n» αριθμείται σε όλο το έργο· «2.Α» και «ΥΠ-1» επαναλαμβάνονται σε κάθε κτίριο
+  wide=/\s\d+$/.test(code);
+  const taken=new Set((wide?p.units:inB).map(u=>UP(u.code).trim()));
+  for(let k=0;k<200&&taken.has(UP(code).trim());k++){ const nx=bumpCode(code); if(!nx) break; code=nx; }
+  return code; }
+function unitTypeFor(p,b,f){ f=Number(f); const inB=bldUnits(p,b), fl=u=>Number(u.floor||0), same=inB.filter(u=>fl(u)===f);
+  if(same.length) return same[same.length-1].type; if(f<0) return 'Αποθήκη';
+  const up=inB.filter(u=>fl(u)>=0), all=p.units.filter(u=>fl(u)>=0); const src=up.length?up:all;
+  return src.length?src[src.length-1].type:'Διαμέρισμα'; }
+/** Κενή ιδιοκτησία: χωρίς εμβαδά, κλειδωμένα ποσοστά, κείμενο ή αποκλειστικές χρήσεις — αφαιρείται χωρίς να χαθεί κάτι. */
+function unitEmpty(p,u){ return !['main','semi','base','pool','tanks','pmFixed','pmManual','height'].some(k=>num(u[k])!=null)&&!(u.levels||[]).length&&!String(u.descr||'').trim()&&!(p.excl||[]).some(x=>x.unit===u.id); }
+/** Ορίζει πόσες ιδιοκτησίες έχει η στάθμη f του κτιρίου: προσθέτει νέες γραμμές ή αφαιρεί κενές από το τέλος.
+ *  Ιδιοκτησίες με στοιχεία δεν αφαιρούνται ποτέ από εδώ (kept = πόσες έμειναν παραπάνω). */
+function setFloorCount(p,bid,f,n){ f=Number(f); n=Math.max(0,Math.min(40,Math.round(num(n)??0)));
+  const b=(p.buildings||[]).find(b=>b.id===bid); if(!b) return null;
+  const same=()=>p.units.filter(u=>u.bld===bid&&Number(u.floor||0)===f);
+  let added=0,removed=0,kept=0;
+  while(same().length<n){ const u=mkUnit(uid(),unitCodeFor(p,b,f)); u.type=unitTypeFor(p,b,f); u.bld=bid; u.floor=f;
+    // θέση: μετά την τελευταία ιδιοκτησία του κτιρίου σε ίδια ή χαμηλότερη στάθμη, αλλιώς πριν από την πρώτη του
+    let at=-1; p.units.forEach((x,i)=>{ if(x.bld===bid&&Number(x.floor||0)<=f) at=i; });
+    if(at<0){ const fi=p.units.findIndex(x=>x.bld===bid); at=fi<0?p.units.length-1:fi-1; }
+    p.units.splice(at+1,0,u); added++; }
+  while(same().length>n){ const s=same(), u=s[s.length-1]; if(!unitEmpty(p,u)){ kept=s.length-n; break; }
+    p.units=p.units.filter(x=>x!==u); (p.groups||[]).forEach(g=>{ g.units=(g.units||[]).filter(x=>x!==u.id); }); removed++; }
+  return {added,removed,kept}; }
 function sampleProject(){
   const U=[
     ['ΚΑΤΟΙΚΙΑ 1',[['Ισόγειο',103.35],['Όροφος',63.10]],null,22.96,72.75,37,null],
@@ -422,4 +471,4 @@ function runChecks(p,c){
   return L;
 }
 
-export { FLOORS, floorName, valueCoef, elevCoef, heatCoef, levelFloor, heightOf, baseHeightOf, itemFloor, itemHeight, unitLevels, indoor, distribute, holder, twoLevel, upgrade, mkBuilding, BLD_PREFIX, AREA_COLS, KINDS, UNIT_TYPES, LEVELS, ZONES, REGIMES, PLOT_TYPES, AREAS_ZONE, TABS, DEFAULT_ENG, $, $$, esc, clone, num, nz, r2, fmt, a2, fin, UP, apportion, normPt, parseRings, parsePoints, ringsArea, ringOpen, blankProject, GU, mkUnit, sampleProject, unitMain, compute, runChecks };
+export { bldTop, bldLow, bldFloors, bumpCode, unitCodeFor, unitEmpty, setFloorCount, FLOORS, floorName, valueCoef, elevCoef, heatCoef, levelFloor, heightOf, baseHeightOf, itemFloor, itemHeight, unitLevels, indoor, distribute, holder, twoLevel, upgrade, mkBuilding, BLD_PREFIX, AREA_COLS, KINDS, UNIT_TYPES, LEVELS, ZONES, REGIMES, PLOT_TYPES, AREAS_ZONE, TABS, DEFAULT_ENG, $, $$, esc, clone, num, nz, r2, fmt, a2, fin, UP, apportion, normPt, parseRings, parsePoints, ringsArea, ringOpen, blankProject, GU, mkUnit, sampleProject, unitMain, compute, runChecks };
