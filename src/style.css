@@ -118,6 +118,8 @@ table.dt td.calc{font-weight:600;font-variant-numeric:tabular-nums}
 table.dt tr.tot td{background:var(--sunk);font-weight:700;border-bottom:0}
 table.dt tr.detail > td{background:var(--bg);padding:12px 14px}
 table.dt td.act{white-space:nowrap;text-align:right}
+/* τα κουμπιά της γραμμής (Στοιχεία, ↑, ✕) μένουν πάντα ορατά δεξιά, όσο φαρδύς κι αν είναι ο πίνακας */
+table.dt td.act{position:sticky;right:0;background:var(--surface);box-shadow:-8px 0 8px -8px rgba(10,20,30,.18)}
 .pts{font-family:var(--f-mono);font-size:12px}
 .diff-ok{color:var(--ok);font-size:12px} .diff-bad{color:var(--err);font-size:12px;font-weight:600}
 .lvls{display:flex;flex-direction:column;gap:6px}
@@ -176,6 +178,7 @@ body.locked{overflow:hidden}
 /* κτίρια */
 table.dt tr.bhead td{background:var(--accent-soft);border-bottom-color:var(--line)}
 table.dt tr.bhead.warnrow td{background:var(--warn-soft)}
+table.dt tr.bhead td.act{background:var(--accent-soft)}
 table.dt tr.in-b > td:first-child{padding-left:22px}
 /* κλείδωμα ποσοστών */
 input.lockin{width:92px}

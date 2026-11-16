@@ -176,7 +176,7 @@ function unitCodeFor(p,b,f){ f=Number(f);
     // μέσα στο κτίριο συνεχίζει τη σειρά του («Α2» → «Α3»)· από άλλο κτίριο δανείζεται μόνο το ύφος «ΚΑΤΟΙΚΙΑ n»
     if(up.length&&!up.some(u=>DOTTED.test(String(u.code).trim()))) code=bumpCode(last(up).code);
     else if(!up.length&&all.length&&NUMBERED.test(String(last(all).code).trim())) code=bumpCode(String(last(all).code).trim());
-    if(!code) code=(f===0?'ΙΣ':f)+'.Α'; }
+    if(!code) code=b.id?(f===0?'ΙΣ':f)+'.Α':'ΙΔΙΟΚΤΗΣΙΑ '+(p.units.length+1); }
   // «ΚΑΤΟΙΚΙΑ n» αριθμείται σε όλο το έργο· «2.Α» και «ΥΠ-1» επαναλαμβάνονται σε κάθε κτίριο
   wide=/\s\d+$/.test(code);
   const taken=new Set((wide?p.units:inB).map(u=>UP(u.code).trim()));
@@ -188,19 +188,24 @@ function unitTypeFor(p,b,f){ f=Number(f); const inB=bldUnits(p,b), fl=u=>Number(
   return src.length?src[src.length-1].type:'Διαμέρισμα'; }
 /** Κενή ιδιοκτησία: χωρίς εμβαδά, κλειδωμένα ποσοστά, κείμενο ή αποκλειστικές χρήσεις — αφαιρείται χωρίς να χαθεί κάτι. */
 function unitEmpty(p,u){ return !['main','semi','base','pool','tanks','pmFixed','pmManual','height'].some(k=>num(u[k])!=null)&&!(u.levels||[]).length&&!String(u.descr||'').trim()&&!(p.excl||[]).some(x=>x.unit===u.id); }
-/** Ορίζει πόσες ιδιοκτησίες έχει η στάθμη f του κτιρίου: προσθέτει νέες γραμμές ή αφαιρεί κενές από το τέλος.
- *  Ιδιοκτησίες με στοιχεία δεν αφαιρούνται ποτέ από εδώ (kept = πόσες έμειναν παραπάνω). */
-function setFloorCount(p,bid,f,n){ f=Number(f); n=Math.max(0,Math.min(40,Math.round(num(n)??0)));
-  const b=(p.buildings||[]).find(b=>b.id===bid); if(!b) return null;
-  const same=()=>p.units.filter(u=>u.bld===bid&&Number(u.floor||0)===f);
+/** Ομάδα ιδιοκτησιών: ενός κτιρίου (bid) ή όσων δεν έχουν κτίριο (bid κενό), σε μία στάθμη ή σε όλες (f = null). */
+function countGroup(p,bid,f){ const has=id=>(p.buildings||[]).some(b=>b.id===id);
+  return p.units.filter(u=>(bid?u.bld===bid:!has(u.bld))&&(f==null||Number(u.floor||0)===Number(f))); }
+/** Ορίζει το πλήθος των ιδιοκτησιών μιας ομάδας: προσθέτει νέες γραμμές ή αφαιρεί από το τέλος.
+ *  Χωρίς force αφαιρούνται μόνο κενές ιδιοκτησίες (kept = πόσες έμειναν παραπάνω επειδή έχουν στοιχεία)·
+ *  με force αφαιρούνται όλες οι τελευταίες, όπως με το ✕ της γραμμής. */
+function setFloorCount(p,bid,f,n,force){ f=(f==null||f==='')?null:Number(f); n=Math.max(0,Math.min(60,Math.round(num(n)??0))); bid=bid||'';
+  const b=bid?(p.buildings||[]).find(b=>b.id===bid):{id:''}; if(!b) return null;
+  const same=()=>countGroup(p,bid,f), mine=new Set(countGroup(p,bid,null));
   let added=0,removed=0,kept=0;
-  while(same().length<n){ const u=mkUnit(uid(),unitCodeFor(p,b,f)); u.type=unitTypeFor(p,b,f); u.bld=bid; u.floor=f;
-    // θέση: μετά την τελευταία ιδιοκτησία του κτιρίου σε ίδια ή χαμηλότερη στάθμη, αλλιώς πριν από την πρώτη του
-    let at=-1; p.units.forEach((x,i)=>{ if(x.bld===bid&&Number(x.floor||0)<=f) at=i; });
-    if(at<0){ const fi=p.units.findIndex(x=>x.bld===bid); at=fi<0?p.units.length-1:fi-1; }
-    p.units.splice(at+1,0,u); added++; }
-  while(same().length>n){ const s=same(), u=s[s.length-1]; if(!unitEmpty(p,u)){ kept=s.length-n; break; }
-    p.units=p.units.filter(x=>x!==u); (p.groups||[]).forEach(g=>{ g.units=(g.units||[]).filter(x=>x!==u.id); }); removed++; }
+  while(same().length<n){ const s=same(), ff=f!=null?f:(s.length?Number(s[s.length-1].floor||0):0);
+    const u=mkUnit(uid(),unitCodeFor(p,b,ff)); u.type=unitTypeFor(p,b,ff); u.bld=bid; u.floor=ff;
+    // θέση: μετά την τελευταία ιδιοκτησία της ομάδας σε ίδια ή χαμηλότερη στάθμη, αλλιώς πριν από την πρώτη της
+    let at=-1; p.units.forEach((x,i)=>{ if(mine.has(x)&&(f==null||Number(x.floor||0)<=ff)) at=i; });
+    if(at<0){ const fi=p.units.findIndex(x=>mine.has(x)); at=fi<0?p.units.length-1:fi-1; }
+    p.units.splice(at+1,0,u); mine.add(u); added++; }
+  while(same().length>n){ const s=same(), u=s[s.length-1]; if(!force&&!unitEmpty(p,u)){ kept=s.length-n; break; }
+    p.units=p.units.filter(x=>x!==u); (p.excl||[]).forEach(x=>{ if(x.unit===u.id) x.unit=''; }); (p.groups||[]).forEach(g=>{ g.units=(g.units||[]).filter(x=>x!==u.id); }); removed++; }
   return {added,removed,kept}; }
 function sampleProject(){
   const U=[
@@ -471,4 +476,4 @@ function runChecks(p,c){
   return L;
 }
 
-export { bldTop, bldLow, bldFloors, bumpCode, unitCodeFor, unitEmpty, setFloorCount, FLOORS, floorName, valueCoef, elevCoef, heatCoef, levelFloor, heightOf, baseHeightOf, itemFloor, itemHeight, unitLevels, indoor, distribute, holder, twoLevel, upgrade, mkBuilding, BLD_PREFIX, AREA_COLS, KINDS, UNIT_TYPES, LEVELS, ZONES, REGIMES, PLOT_TYPES, AREAS_ZONE, TABS, DEFAULT_ENG, $, $$, esc, clone, num, nz, r2, fmt, a2, fin, UP, apportion, normPt, parseRings, parsePoints, ringsArea, ringOpen, blankProject, GU, mkUnit, sampleProject, unitMain, compute, runChecks };
+export { bldTop, bldLow, bldFloors, bumpCode, unitCodeFor, unitEmpty, setFloorCount, countGroup, FLOORS, floorName, valueCoef, elevCoef, heatCoef, levelFloor, heightOf, baseHeightOf, itemFloor, itemHeight, unitLevels, indoor, distribute, holder, twoLevel, upgrade, mkBuilding, BLD_PREFIX, AREA_COLS, KINDS, UNIT_TYPES, LEVELS, ZONES, REGIMES, PLOT_TYPES, AREAS_ZONE, TABS, DEFAULT_ENG, $, $$, esc, clone, num, nz, r2, fmt, a2, fin, UP, apportion, normPt, parseRings, parsePoints, ringsArea, ringOpen, blankProject, GU, mkUnit, sampleProject, unitMain, compute, runChecks };

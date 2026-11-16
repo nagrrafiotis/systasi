@@ -1,6 +1,6 @@
 // Οι αριθμοί που πάνε στη συμβολαιογράφο: αθροίσματα, στρογγυλοποίηση, ισοζύγιο.
 import { describe, it, expect } from 'vitest';
-import { num, fmt, compute, blankProject, mkUnit, sampleProject, mkBuilding, bldFloors, bldTop, bldLow, setFloorCount, unitEmpty, bumpCode } from '../src/core.js';
+import { num, fmt, compute, blankProject, mkUnit, sampleProject, mkBuilding, bldFloors, bldTop, bldLow, setFloorCount, unitEmpty, bumpCode, countGroup } from '../src/core.js';
 
 const cents = v => Math.round(v * 100);
 let seed = 12345; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
@@ -287,6 +287,22 @@ describe('διάρθρωση κτιρίου: όροφοι και ιδιοκτη�
     p.units[0].main = null; p.excl.push({ id: 'x', unit: p.units[0].id, kind: 'garden', area: 10, boundary: '' });
     expect(unitEmpty(p, p.units[0])).toBe(false);
     expect(setFloorCount(p, a.id, 1, 0).kept).toBe(1);
+  });
+  it('με επιβεβαίωση (force) διαγράφονται και όσες έχουν στοιχεία· οι αποκλειστικές χρήσεις τους μένουν χωρίς ιδιοκτησία', () => {
+    const { p, a } = mk(); setFloorCount(p, a.id, 1, 3); p.units.forEach(u => u.main = 60);
+    p.excl.push({ id: 'x', unit: p.units[2].id, kind: 'garden', area: 10, boundary: '' });
+    expect(setFloorCount(p, a.id, 1, 1, true)).toEqual({ added: 0, removed: 2, kept: 0 });
+    expect(codes(p, a)).toEqual(['1.Α']); expect(p.excl[0].unit).toBe('');
+  });
+  it('πλήθος χωρίς κτίριο ή σε έργο χωρίς κτίρια: προσθέτει στη σειρά και αφαιρεί από το τέλος', () => {
+    const p = blankProject(); p.units[0].main = 100;
+    expect(setFloorCount(p, '', null, 4)).toEqual({ added: 3, removed: 0, kept: 0 });
+    expect(p.units.map(u => u.code)).toEqual(['ΚΑΤΟΙΚΙΑ 1', 'ΚΑΤΟΙΚΙΑ 2', 'ΚΑΤΟΙΚΙΑ 3', 'ΚΑΤΟΙΚΙΑ 4']);
+    expect(setFloorCount(p, '', null, 0)).toEqual({ added: 0, removed: 3, kept: 1 });
+    expect(setFloorCount(p, '', null, 0, true).removed).toBe(1); expect(p.units.length).toBe(0);
+    setFloorCount(p, '', null, 2); expect(p.units.map(u => u.code)).toEqual(['ΙΔΙΟΚΤΗΣΙΑ 1', 'ΙΔΙΟΚΤΗΣΙΑ 2']);
+    const { p: q, a } = mk(); setFloorCount(q, a.id, 0, 1); setFloorCount(q, '', null, 2);
+    expect(countGroup(q, '', null).length).toBe(2); expect(countGroup(q, a.id, null).length).toBe(1);
   });
   it('οι όροφοι δεν πέφτουν κάτω από τη στάθμη που έχει ιδιοκτησίες και τα χιλιοστά κλείνουν', () => {
     const { p, a, b } = mk(); p.info.regime = 'kathoriz'; p.info.plotArea = 1000;

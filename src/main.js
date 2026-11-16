@@ -2,7 +2,7 @@
 import './style.css';
 import './doc.css';
 import { AREA_COLS, KINDS, UNIT_TYPES, LEVELS, ZONES, REGIMES, PLOT_TYPES, AREAS_ZONE, TABS, DEFAULT_ENG, $, $$, uid, newPid, esc, clone, num, nz, r2, fmt, a2, fin, UP, baseHeightOf, heightOf, itemFloor, itemHeight, unitLevels, indoor,
-  parseRings, normPt, blankProject, GU, mkUnit, sampleProject, compute, holder, mkBuilding, BLD_PREFIX, FLOORS, floorName, valueCoef, elevCoef, heatCoef, levelFloor, bldTop, bldLow, bldFloors, setFloorCount } from './core.js';
+  parseRings, normPt, blankProject, GU, mkUnit, sampleProject, compute, holder, mkBuilding, BLD_PREFIX, FLOORS, floorName, valueCoef, elevCoef, heatCoef, levelFloor, bldTop, bldLow, bldFloors, setFloorCount, countGroup, unitEmpty } from './core.js';
 const bOf=(p,u)=>(p.buildings||[]).find(b=>b.id===u.bld);
 const bcode=(p,u)=>{ const b=bOf(p,u); return b?(b.code||''):''; };
 const bShort=b=>{ const t=String(b.code||'').trim().split(/\s+/); return t.length>1?t[t.length-1]:(b.code||''); };
@@ -378,7 +378,7 @@ function vUnits(){
   if(grouped){
     p.buildings.forEach(b=>{ rows+=head(b); p.units.forEach((u,ix)=>{ if(u.bld===b.id) rows+=unitRow(p,c,u,ix,cols,two,man,true); }); });
     const orph=p.units.map((u,ix)=>[u,ix]).filter(([u])=>!bOf(p,u));
-    if(orph.length) rows+=`<tr class="bhead warnrow"><td colspan="${cols.length+6+(two?1:0)+(vol?2:0)}"><b>Χωρίς κτίριο</b> <span class="hint">— διάλεξε κτίριο από το μενού κάθε γραμμής</span></td></tr>`+orph.map(([u,ix])=>unitRow(p,c,u,ix,cols,two,man,true)).join('');
+    if(orph.length) rows+=`<tr class="bhead warnrow"><td colspan="${cols.length+6+(two?1:0)+(vol?2:0)}"><div class="row" style="gap:10px"><b>Χωρίς κτίριο</b> <label class="chk">πλήθος ${CNT('',null,orph.length,'Πλήθος ιδιοκτησιών χωρίς κτίριο')}</label><span class="hint">— βάλε τες σε κτίριο από το μενού κάθε γραμμής, ή μείωσε το πλήθος για να διαγραφούν</span></div></td></tr>`+orph.map(([u,ix])=>unitRow(p,c,u,ix,cols,two,man,true)).join('');
   } else rows=p.units.map((u,ix)=>unitRow(p,c,u,ix,cols,two,man,false)).join('');
   const G=PLOT_TYPES[p.info.plotType]||PLOT_TYPES.oik;
   const pmText=(two?(man?'Τα ποσοστά των ιδιοκτησιών δίνονται χειροκίνητα, επί του κτιρίου τους.':'Τα ποσοστά υπολογίζονται αυτόματα: πρώτα κάθε κτιρίου επί του '+G[2]+', μετά κάθε ιδιοκτησίας επί του κτιρίου της.'):(man?'Τα ποσοστά δίνονται χειροκίνητα.':'Τα ποσοστά υπολογίζονται αυτόματα (ρύθμιση στα Στοιχεία έργου).'))+(man?'':' Για να κλειδώσεις ποσοστό σε μια ιδιοκτησία (π.χ. αποθήκη), γράψε το στη στήλη ‰· οι υπόλοιπες αναπροσαρμόζονται.');
@@ -387,18 +387,19 @@ function vUnits(){
    </div>
    ${quickPanel()}
    ${buildingsPanel()}
-   <div class="row" style="justify-content:space-between"><h3 style="font-size:15px">Ιδιοκτησίες</h3><button class="btn primary" data-act="u-add">+ Ιδιοκτησία</button></div>
+   <div class="row" style="justify-content:space-between"><div class="row" style="gap:12px"><h3 style="font-size:15px">Ιδιοκτησίες</h3>${grouped?'':`<label class="chk">Πλήθος ${CNT('',null,p.units.length,'Πλήθος ιδιοκτησιών')}</label><span class="hint">γράψε αριθμό και πάτα Enter</span>`}</div><button class="btn primary" data-act="u-add">+ Ιδιοκτησία</button></div>
    <div class="tscroll"><table class="dt"><thead><tr><th>Ιδιοκτησία / στάθμη</th>${cols.map(a=>`<th class="n">${a.h}<br><span class="u">m²</span></th>${volH(a)}`).join('')}<th class="n">Αποκλ. χρήσεις<br><span class="u">m²</span></th><th class="n">Στάθμευση<br><span class="u">m²</span></th>${two?'<th class="n">‰ επί<br>κτιρίου</th>':''}<th class="n">${two?'‰ επί<br>'+esc(G[2]):'Ποσοστό<br>‰'}</th><th class="n">Αναλογία ${esc(G[2])}<br><span class="u">m²</span></th><th></th></tr></thead>
    <tbody>${rows}${p.units.length?`<tr class="tot"><td>Σύνολο ιδιοκτησιών</td>${cols.map(a=>`<td class="n" data-calc="tot.${a.k}"></td>${a.k==='main'&&vol?'<td></td><td class="n" data-calc="tot.volOwn"></td>':''}`).join('')}<td class="n" data-calc="tot.excl"></td><td class="n" data-calc="tot.park"></td>${two?'<td></td>':''}<td class="n" data-calc="pmSum"></td><td class="n" data-calc="tot.plot"></td><td></td></tr>`:''}</tbody></table></div>
    ${p.units.length?'':'<p class="hint">Δεν υπάρχουν ιδιοκτησίες ακόμη. Πρόσθεσε την πρώτη με το κουμπί «+ Ιδιοκτησία».</p>'}
    ${balancePanel()}
   </section>`;
 }
+const CNT=(bid,f,n,label)=>`<input type="text" class="n" inputmode="numeric" id="bf-${bid||'x'}-${f==null?'all':f}" data-coll="bf" data-id="${esc(bid||'')}" data-field="${f==null?'':f}" value="${n}" aria-label="${esc(label)}" title="Γράψε το πλήθος και πάτα Enter: προστίθενται ή αφαιρούνται ιδιοκτησίες" style="width:64px">`;
 /** Διάρθρωση κτιρίου: πόσοι όροφοι, πόσα υπόγεια, πόσες ιδιοκτησίες σε κάθε στάθμη. */
 function structRow(p,b){
   const us=p.units.filter(u=>u.bld===b.id), at=f=>us.filter(u=>Number(u.floor||0)===f);
   const rows=bldFloors(p,b).map(f=>{ const L=at(f); return `<tr><td>${esc(floorName(f))}</td>
-     <td class="n"><input type="text" class="n" inputmode="numeric" id="bf-${b.id}-${f}" data-coll="bf" data-id="${esc(b.id)}" data-field="${f}" value="${L.length}" aria-label="Ιδιοκτησίες: ${esc(floorName(f))}" style="width:64px"></td>
+     <td class="n">${CNT(b.id,f,L.length,'Ιδιοκτησίες: '+floorName(f))}</td>
      <td class="hint">${L.length?L.map(u=>esc(u.code||'—')).join(' · '):'—'}</td></tr>`; }).join('');
   const chips=p.units.map(u=>{ const o=bOf(p,u), mine=u.bld===b.id;
     return `<label class="chip"><input type="checkbox" data-coll="bu" data-id="${esc(b.id)}" data-field="${esc(u.id)}" ${mine?'checked':''}> ${esc(u.code||'—')}${!mine&&o?` <span class="hint">(${esc(bShort(o))})</span>`:''}</label>`; }).join('');
@@ -410,7 +411,7 @@ function structRow(p,b){
     </div>
     <div class="tscroll"><table class="dt" style="max-width:640px"><thead><tr><th>Στάθμη</th><th class="n">Ιδιοκτησίες</th><th>Ονομασίες</th></tr></thead>
     <tbody>${rows}<tr class="tot"><td>Σύνολο ${esc(b.code||'κτιρίου')}</td><td class="n">${us.length}</td><td></td></tr></tbody></table></div>
-    <p class="hint">Για νέες ιδιοκτησίες: γράψε πόσες έχει κάθε στάθμη και πάτα Enter (ή βγες από το πεδίο): οι γραμμές μπαίνουν στον πίνακα «Ιδιοκτησίες» από κάτω, έτοιμες για εμβαδά. Όταν μειώνεις τον αριθμό, αφαιρούνται μόνο κενές ιδιοκτησίες· όσες έχουν στοιχεία σβήνονται από το ✕ της γραμμής τους. Οι όροφοι και τα υπόγεια δεν μειώνονται κάτω από τη στάθμη που έχει ήδη ιδιοκτησίες.</p>
+    <p class="hint">Για νέες ιδιοκτησίες: γράψε πόσες έχει κάθε στάθμη και πάτα Enter (ή βγες από το πεδίο): οι γραμμές μπαίνουν στον πίνακα «Ιδιοκτησίες» από κάτω, έτοιμες για εμβαδά. Όταν μειώνεις τον αριθμό, διαγράφονται οι τελευταίες της στάθμης· αν έχουν στοιχεία, ζητείται πρώτα επιβεβαίωση. Οι όροφοι και τα υπόγεια δεν μειώνονται κάτω από τη στάθμη που έχει ήδη ιδιοκτησίες.</p>
   </div></td></tr>`;
 }
 function buildingsPanel(){
@@ -1037,20 +1038,30 @@ function applyInput(el){
   else if(coll==='al'){ const [gid,u]=id.split('|'); const g=p.groups.find(g=>g.id===gid); if(g){ g.manual=g.manual||{}; g.manual[u]=v; } }
   return el.dataset.re?'hard':'soft';
 }
+/** Πλήθος ιδιοκτησιών μιας ομάδας (στάθμη κτιρίου, «χωρίς κτίριο», ή όλο το έργο): προσθέτει ή διαγράφει από το τέλος. */
+function applyCount(bid,f,val){
+  const p=S.p, n=Math.max(0,Math.round(num(val)??0)), fn=f==null?(bid?'Κτίριο':p.buildings.length?'Χωρίς κτίριο':'Ιδιοκτησίες'):floorName(f);
+  const gone=countGroup(p,bid,f).slice(n), full=gone.filter(u=>!unitEmpty(p,u));
+  const run=force=>{ const r=setFloorCount(p,bid,f,n,force); if(!r) return; if(bid) S.open.add(BLD_PREFIX+bid);
+    const y=window.scrollY; if(r.added||r.removed) scheduleSave(); renderAll(); window.scrollTo(0,y);
+    if(r.added) toast(`${fn}: ${r.added===1?'προστέθηκε μία ιδιοκτησία':'προστέθηκαν '+r.added+' ιδιοκτησίες'}`);
+    else if(r.removed) toast(`${fn}: ${r.removed===1?'διαγράφηκε μία ιδιοκτησία':'διαγράφηκαν '+r.removed+' ιδιοκτησίες'}`); };
+  if(!full.length){ run(false); return; }
+  const area=u=>{ const a=S.c.u[u.id]&&S.c.u[u.id].main; return a?` — ${fmt(a)} m²`:''; };
+  const d=openDialog('Διαγραφή ιδιοκτησιών',`<p>${gone.length===1?'Θα διαγραφεί η ιδιοκτησία':'Θα διαγραφούν '+gone.length+' ιδιοκτησίες'}, μαζί με τα εμβαδά ${gone.length===1?'της':'τους'}:</p>
+    <ul style="margin:0;padding-left:20px">${gone.map(u=>`<li><b>${esc(u.code||'—')}</b>${esc(area(u))}${unitEmpty(p,u)?' <span class="hint">(κενή)</span>':''}</li>`).join('')}</ul>
+    <p class="hint">Αποκλειστικές χρήσεις που είχαν δοθεί σε αυτές μένουν στον πίνακα χωρίς ιδιοκτησία, για να τις δώσεις αλλού ή να τις σβήσεις.</p>
+    <div class="row" style="justify-content:flex-end;gap:8px"><button type="button" class="btn ghost" data-dlg-close>Άκυρο</button><button type="button" class="btn danger" id="cntGo">Διαγραφή</button></div>`);
+  let done=false; $('#cntGo').addEventListener('click',()=>{ done=true; d.close(); run(true); });
+  d.addEventListener('close',()=>{ if(!done){ const y=window.scrollY; renderMain(); window.scrollTo(0,y); } },{once:true});
+}
 document.addEventListener('input',ev=>{ const el=ev.target; if(!el.dataset||!el.dataset.coll||el.dataset.coll==='bf'||el.tagName==='SELECT'||el.type==='checkbox'||el.type==='radio') return;
   const r=applyInput(el); if(el.dataset.coll==='eng') return;
   scheduleSave(); refresh(); if(TAB==='tables') $('#paper').innerHTML=docHTML(S.p,S.c,S.p.out||{});
   if(el.dataset.field==='name'&&el.dataset.coll==='info') fillProjSel();
 });
 document.addEventListener('change',ev=>{ const el=ev.target; if(!el.dataset||!el.dataset.coll) return;
-  if(el.dataset.coll==='bf'){ // ιδιοκτησίες ανά στάθμη κτιρίου
-    const bid=el.dataset.id, f=Number(el.dataset.field), r=setFloorCount(S.p,bid,f,el.value); if(!r) return;
-    S.open.add(BLD_PREFIX+bid); const y=window.scrollY; if(r.added||r.removed) scheduleSave(); renderAll(); window.scrollTo(0,y);
-    const fn=floorName(f);
-    if(r.kept) toast(`${fn}: ${r.kept===1?'μία ιδιοκτησία έχει':r.kept+' ιδιοκτησίες έχουν'} στοιχεία και δεν ${r.kept===1?'αφαιρέθηκε':'αφαιρέθηκαν'}. Σβήσε ${r.kept===1?'την':'τες'} από το ✕ της γραμμής.`);
-    else if(r.added) toast(`${fn}: ${r.added===1?'προστέθηκε μία ιδιοκτησία':'προστέθηκαν '+r.added+' ιδιοκτησίες'}`);
-    else if(r.removed) toast(`${fn}: ${r.removed===1?'αφαιρέθηκε μία κενή ιδιοκτησία':'αφαιρέθηκαν '+r.removed+' κενές ιδιοκτησίες'}`);
-    return; }
+  if(el.dataset.coll==='bf'){ applyCount(el.dataset.id||'',el.dataset.field===''?null:Number(el.dataset.field),el.value); return; }
   if(el.tagName==='SELECT'||el.type==='checkbox'||el.type==='radio'||el.type==='date'){ const r=applyInput(el); if(el.dataset.coll==='eng') return; scheduleSave(); if(r==='hard'||el.tagName==='SELECT'){ const y=window.scrollY; renderAll(); window.scrollTo(0,y);} else refresh(); }
   else if(el.dataset.coll==='calcn'||el.dataset.coll==='fc'||el.dataset.coll==='gf'||(el.dataset.coll==='u'&&(el.dataset.field==='pmFixed'||el.dataset.field==='height'))||el.dataset.field==='coords'||el.dataset.field==='plotBoundary'||el.dataset.field==='coverage'||el.dataset.field==='plotArea'){ const y=window.scrollY; renderMain(); window.scrollTo(0,y); }
 });
